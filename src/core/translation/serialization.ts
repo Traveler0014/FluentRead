@@ -2,12 +2,13 @@
  * @file src/core/translation/serialization.ts
  *
  * 文件职责：把候选 DOM 安全序列化为可翻译文本槽，并在异步请求后依据源快照恢复到仍然匹配的真实节点。
- * 主要内容：定义 TranslationTextSlot、TranslationSourceSnapshot 与样式覆盖规则，负责槽位编码解析、活节点收集（排除候选内的独立 tooltip）、译文写入克隆、隐藏/编辑/宿主 metadata 省略、可见公式骨架保全、译文产物过滤，以及识别 line-clamp 与溢出截断并提供临时解除截断的样式覆盖规则。 可核对的公开符号包括 TranslationTextSlot、TranslationSourceSnapshot、SerializedTranslationSlots、TranslationStyleOverride、translationTruncationStyleOverrides、serializeTranslationSlots、parseTranslationSlots、createTranslationSourceSnapshot。
+ * 主要内容：定义 TranslationTextSlot、TranslationSourceSnapshot 与样式覆盖规则，负责槽位编码解析、活节点收集（排除候选内的独立 tooltip）、词内碎片合并、译文写入克隆、隐藏/编辑/宿主 metadata 省略、可见公式骨架保全、译文产物过滤，以及识别 line-clamp 与溢出截断并提供临时解除截断的样式覆盖规则。 可核对的公开符号包括 TranslationTextSlot、TranslationSourceSnapshot、SerializedTranslationSlots、TranslationStyleOverride、translationTruncationStyleOverrides、serializeTranslationSlots、parseTranslationSlots、createTranslationSourceSnapshot、getTranslationSlotTextNodes。
  * 模块边界：本文件属于可独立测试的 core 候选领域；可以读取传入 DOM 以计算结果，但不访问配置存储、不调用 provider、不注册页面监听器，也不负责译文渲染或 feature 生命周期。
  */
 
 import {isTranslationTextNodeProtected} from './text';
 import {
+    getElementTagName,
     hasContentEditableMarker,
     isForeignTranslationBoundary,
     isHardPruneTag,
@@ -34,6 +35,17 @@ export interface TranslationTextSlot {
     prefix: string;
     suffix: string;
     source: string;
+    /**
+     * 与 node 在词内连续的后续 Text 节点：宿主用内联标记把同一个词切成
+     * one / ’ / s 这类碎片时，它们必须作为同一个槽位送出，否则模型只能
+     * 逐片翻译。译文写入 node，这些节点清空；恢复仍以原始值快照为准。
+     */
+    continuationNodes?: readonly Text[];
+}
+
+/** 展平一个槽位包含的全部 Text，供节点身份比较与恢复快照使用。 */
+export function getTranslationSlotTextNodes(slot: TranslationTextSlot): readonly Text[] {
+    return slot.continuationNodes?.length ? [slot.node, ...slot.continuationNodes] : [slot.node];
 }
 
 export interface TranslationSourceSnapshot {
@@ -143,6 +155,14 @@ function hashSlotSources(sources: readonly string[]): string {
     return (hash >>> 0).toString(36);
 }
 
+export interface TranslationSlotSerializationOptions {
+    /**
+     * 槽位之间写入的原始分隔。同一段落的连续片段应使用单个空格，让模型看到
+     * 完整句子；跨段落合批（AI 多段）仍保留换行，避免把不同段落粘成一句。
+     */
+    separator?: string;
+}
+
 /**
  * 将多个纯文本槽编码为一次服务请求。确定性 nonce 使整段缓存 key 保持稳定；
  * 若源文本已包含完全相同的哨兵标记，则追加冲突后缀。
@@ -150,6 +170,7 @@ function hashSlotSources(sources: readonly string[]): string {
 export function serializeTranslationSlots(
     sources: readonly string[],
     requestedNonce = hashSlotSources(sources),
+    options: TranslationSlotSerializationOptions = {},
 ): SerializedTranslationSlots {
     let nonce = requestedNonce.replace(/[^a-z0-9_-]/giu, '') || 'slots';
     let collision = 0;
@@ -161,9 +182,14 @@ export function serializeTranslationSlots(
         nonce = `${requestedNonce}_${collision}`.replace(/[^a-z0-9_-]/giu, '');
     }
 
+    const separator = options.separator ?? '\n';
     const starts = sources.map((_, index) => `___FLUENTREAD_${nonce}_${index}_BEGIN___`);
     const ends = sources.map((_, index) => `___FLUENTREAD_${nonce}_${index}_END___`);
-    const payload = sources.map((source, index) => `${starts[index]}${source}${ends[index]}`).join('\n');
+    // 分隔符写在标记之外：解析仍只接受标记之间（或之外仅空白）的文本，
+    // 但模型能看出相邻槽位属于同一句话，而不是彼此独立的短句。
+    const payload = sources
+        .map((source, index) => `${index === 0 ? '' : separator}${starts[index]}${source}${ends[index]}`)
+        .join('');
     return {payload, starts, ends};
 }
 
@@ -203,6 +229,75 @@ export function parseTranslationSlots(
         cursor = endIndex + end.length;
     }
     return translated.slice(cursor).trim() ? null : results;
+}
+
+/**
+ * 两条祖先链只允许穿过纯排版内联层。链接、上下标和控件保留独立槽位，
+ * 因为把整段译文塞进这些元素会改变链接或脚注的可见结构。
+ */
+const wordContinuationTags = new Set([
+    'span', 'em', 'i', 'b', 'strong', 'font', 'u', 's', 'small', 'mark', 'abbr', 'cite', 'q',
+]);
+
+/**
+ * 求两个槽位的最内层共同祖先及两侧祖先链；任一侧穿过非排版内联元素时返回 null。
+ * 两个槽位来自同一次遍历，因此 previous 的祖先链上必然存在同时包含 next 的节点，
+ * 自 next 上溯也必然回到该节点；这里用非空断言表达该不变量，不设置防御分支。
+ */
+function wordContinuationChains(
+    previous: Text,
+    next: Text,
+): {previousChain: Element[]; nextChain: Element[]} | null {
+    const previousChain: Element[] = [];
+    let boundary = previous.parentElement!;
+    while (!boundary.contains(next)) {
+        if (!wordContinuationTags.has(getElementTagName(boundary))) return null;
+        previousChain.push(boundary);
+        boundary = boundary.parentElement!;
+    }
+    const nextChain: Element[] = [];
+    let current = next.parentElement!;
+    while (current !== boundary) {
+        if (!wordContinuationTags.has(getElementTagName(current))) return null;
+        nextChain.push(current);
+        current = current.parentElement!;
+    }
+    return {previousChain, nextChain};
+}
+
+/**
+ * 判定两个相邻槽位的交界是否落在同一个词的中间：两条祖先链只经过排版内联层，
+ * 且在共同祖先下两条链的顶层节点互为紧邻兄弟；受保护或语义节点会自然打断该条件。
+ */
+function isWordContinuationBoundary(previous: Text, next: Text): boolean {
+    const chains = wordContinuationChains(previous, next);
+    if (!chains) return false;
+    const previousTop: Node = chains.previousChain.at(-1) ?? previous;
+    const nextTop: Node = chains.nextChain.at(-1) ?? next;
+    return previousTop.nextSibling === nextTop;
+}
+
+/** 合并词内碎片；交界处任一侧存在空白即视为词边界，保持独立槽位。 */
+function mergeWordContinuationSlots(slots: readonly TranslationTextSlot[]): TranslationTextSlot[] {
+    const merged: TranslationTextSlot[] = [];
+    for (const slot of slots) {
+        const previous = merged.at(-1);
+        if (previous) {
+            const previousTail = previous.continuationNodes?.at(-1) ?? previous.node;
+            if (previous.suffix === '' && slot.prefix === '' && isWordContinuationBoundary(previousTail, slot.node)) {
+                merged[merged.length - 1] = {
+                    node: previous.node,
+                    prefix: previous.prefix,
+                    source: previous.source + slot.source,
+                    suffix: slot.suffix,
+                    continuationNodes: [...(previous.continuationNodes ?? []), slot.node],
+                };
+                continue;
+            }
+        }
+        merged.push(slot);
+    }
+    return merged;
 }
 
 type TranslationTextSlotParts = Omit<TranslationTextSlot, 'node'>;
@@ -246,7 +341,7 @@ function collectSlots(
         if (parts && !isTextInNestedTranslationTooltip(node, root)) slots.push({node, ...parts});
         current = walker.nextNode();
     }
-    return slots;
+    return mergeWordContinuationSlots(slots);
 }
 
 function collectSnapshotSlots(
@@ -277,7 +372,8 @@ function collectSnapshotSlots(
         liveNode = liveWalker.nextNode();
         cloneNode = cloneWalker.nextNode();
     }
-    return slots;
+    // 克隆结构与实时结构一致，因此同一合并规则在两侧得出相同的槽位划分。
+    return mergeWordContinuationSlots(slots);
 }
 
 /**
@@ -353,14 +449,35 @@ export function collectLiveTranslationTextSlots(
     );
 }
 
+/**
+ * 整块降级译文：多槽候选在槽数过多时会改为一次整块请求，把整段译文放在首个槽位、
+ * 其余槽位为空。此时逐槽骨架已没有对应内容，直接输出纯译文，避免整段译文被塞进
+ * 首个内联元素（加粗、链接）的样式里。
+ */
+function isWholeBlockTranslation(snapshot: TranslationSourceSnapshot, translations: readonly string[]): boolean {
+    // 长度相等且大于 1，因此索引 0 必然存在；不使用可选链，避免出现永远不可达的分支。
+    return snapshot.slots.length > 1
+        && translations.length === snapshot.slots.length
+        && Boolean(translations[0]!.trim())
+        && translations.slice(1).every((translation) => !translation);
+}
+
 /** 只修改脱离文档的快照文本节点；没有对应译文的槽位保持原文。 */
 export function applyTranslationsToSnapshot(
     snapshot: TranslationSourceSnapshot,
     translations: readonly string[],
 ): string {
+    if (isWholeBlockTranslation(snapshot, translations)) {
+        const document = snapshot.clone.ownerDocument;
+        snapshot.clone.replaceChildren(document.createTextNode(translations[0]!));
+        return snapshot.clone.innerHTML;
+    }
     snapshot.slots.forEach((slot, index) => {
         const translation = translations[index];
-        if (translation !== undefined) slot.node.nodeValue = `${slot.prefix}${translation}${slot.suffix}`;
+        if (translation === undefined) return;
+        slot.node.nodeValue = `${slot.prefix}${translation}${slot.suffix}`;
+        // 词内合并槽的后续节点必须清空，否则原文碎片会残留在译文行里。
+        slot.continuationNodes?.forEach((node) => { node.nodeValue = ''; });
     });
     return snapshot.clone.innerHTML;
 }

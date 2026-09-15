@@ -7,6 +7,7 @@
 import {
     applyTranslationsToSnapshot,
     collectLiveTranslationTextSlots,
+    getTranslationSlotTextNodes,
     createTranslationSourceSnapshot,
     getCurrentTranslationCore,
     type TranslationTextProtectionOptions,
@@ -59,7 +60,7 @@ export function refreshBilingualTranslationSkeleton(
         core.shouldStayOriginal,
         boundary,
         options,
-    ).map((slot) => slot.node);
+    ).flatMap(getTranslationSlotTextNodes);
     setBilingualContent(node, content, replay);
     setRenderedStyleAttribute(node);
     return true;

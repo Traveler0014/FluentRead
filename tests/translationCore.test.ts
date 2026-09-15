@@ -17,6 +17,7 @@ import {
     parseTranslationSlots,
     selectPreferredTranslationCandidate,
     serializeTranslationSlots,
+    getTranslationSlotTextNodes,
     TranslationCandidateCore,
     resolveTranslationCandidateAtPoint,
 } from '@/src/core/translation/public';
@@ -3026,6 +3027,97 @@ describe('translation candidate core', () => {
         document.body.append(structuralNav);
         expect(hasStructuralAncestor(structuralCopy)).toBe(true);
         expect(classifyGenericCandidate(structuralCopy)).toBeNull();
+    });
+});
+
+describe('文本槽词内碎片合并与整块降级', () => {
+    it('把被内联标记切开的同一个词合并为一个槽位，并保留链接片段', () => {
+        const {document} = parseHTML('<html><body><p id="target">one<span>’</span>s judgment and a <a href="/x">linked word</a>.</p></body></html>');
+        const target = document.querySelector('#target') as HTMLElement;
+
+        const slots = collectLiveTranslationTextSlots(target);
+        expect(slots.map((slot) => slot.source)).toEqual(['one’s judgment and a', 'linked word', '.']);
+        expect(getTranslationSlotTextNodes(slots[0]!).map((node) => node.nodeValue)).toEqual(['one', '’', 's judgment and a ']);
+        expect(getTranslationSlotTextNodes(slots[1]!)).toEqual([slots[1]!.node]);
+        // 快照与实时槽位必须得出同一分组，否则提交阶段的来源比对会永久失配。
+        expect(createTranslationSourceSnapshot(target).slots.map((slot) => slot.source))
+            .toEqual(['one’s judgment and a', 'linked word', '.']);
+
+        const rendered = applyTranslationsToSnapshot(
+            createTranslationSourceSnapshot(target),
+            ['合并译文', '链接译文', '。'],
+        );
+        expect(rendered).toContain('合并译文');
+        expect(rendered).toContain('<a href="/x">链接译文</a>');
+        // 合并槽的后续节点必须清空，否则原文碎片会残留在译文行里。
+        expect(rendered).not.toContain('s judgment');
+        expect(rendered).not.toContain('’');
+    });
+
+    it('同父节点的相邻文本也按词内碎片合并', () => {
+        const {document} = parseHTML('<html><body></body></html>');
+        const target = document.createElement('p');
+        target.append('one', document.createTextNode('’'), document.createTextNode('s'));
+        document.body.append(target);
+
+        const slots = collectLiveTranslationTextSlots(target);
+        expect(slots.map((slot) => slot.source)).toEqual(['one’s']);
+        expect(getTranslationSlotTextNodes(slots[0]!)).toHaveLength(3);
+    });
+
+    it('空白、语义元素、受保护节点与块边界都保持独立槽位', () => {
+        const {document} = parseHTML(`<html><body>
+            <p id="spaced">left <span>right</span></p>
+            <p id="lead">one<span> right</span></p>
+            <p id="link">one<a href="/x">’</a>s</p>
+            <p id="void">one<img src="a.png">s</p>
+            <p id="protected">one<span translate="no">hidden</span>s</p>
+            <div id="blocks"><p>one</p><p>s</p></div>
+        </body></html>`);
+        const sources = (id: string) => collectLiveTranslationTextSlots(
+            document.querySelector(`#${id}`) as HTMLElement,
+        ).map((slot) => slot.source).join('|');
+
+        expect(sources('spaced')).toBe('left|right');
+        expect(sources('lead')).toBe('one|right');
+        expect(sources('link')).toBe('one|’|s');
+        expect(sources('void')).toBe('one|s');
+        expect(sources('protected')).toBe('one|s');
+        expect(sources('blocks')).toBe('one|s');
+    });
+
+    it('整块降级译文直接输出纯译文，逐槽译文仍保留内联结构', () => {
+        const {document} = parseHTML('<html><body><p id="target">Read <a href="/g">the guide</a>.</p><p id="single">Single.</p></body></html>');
+        const target = document.querySelector('#target') as HTMLElement;
+        const single = document.querySelector('#single') as HTMLElement;
+
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target),
+            ['读完这份指南。', '', ''])).toBe('读完这份指南。');
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target),
+            ['读', '指南', '。'])).toContain('<a href="/g">指南</a>');
+        // 槽位数量不匹配、首槽为空或次槽仍有译文时都不能走整块降级。
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target), ['读']))
+            .toContain('the guide');
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target), ['', '', '']))
+            .toBe(' <a href="/g"></a>');
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target), ['整段。', '次槽', '']))
+            .toContain('次槽');
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(single), ['单个。']))
+            .toBe('单个。');
+    });
+
+    it('同一段落的槽协议使用空格分隔，跨段落合批仍保留换行', () => {
+        const inline = serializeTranslationSlots(['One ', 'two'], 'inline', {separator: ' '});
+        expect(inline.payload).toBe(
+            '___FLUENTREAD_inline_0_BEGIN___One ___FLUENTREAD_inline_0_END___ '
+            + '___FLUENTREAD_inline_1_BEGIN___two___FLUENTREAD_inline_1_END___',
+        );
+        expect(parseTranslationSlots(inline,
+            `${inline.starts[0]}一${inline.ends[0]} ${inline.starts[1]}二${inline.ends[1]}`))
+            .toEqual(['一', '二']);
+
+        const lines = serializeTranslationSlots(['One ', 'two'], 'lines');
+        expect(lines.payload).toContain(`___FLUENTREAD_lines_0_END___\n___FLUENTREAD_lines_1_BEGIN___`);
     });
 });
 

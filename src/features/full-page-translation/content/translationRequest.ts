@@ -29,6 +29,8 @@ const FULL_PAGE_TRANSLATION_REQUEST_CACHE_LIMIT = 512;
 const FULL_PAGE_TRANSLATION_REMOUNT_GRACE_MS = 250;
 const AI_MULTI_SEGMENT_MAX_TEXT_SLOTS = 4;
 const AI_MULTI_SEGMENT_MAX_CHARACTERS = 2_000;
+/** 标记协议解析失败后仍逐槽回填的上限；超过时改为一次整块请求。 */
+const SLOT_PROTOCOL_FALLBACK_MAX_SLOTS = 8;
 
 export interface FullPageTranslationConfigSnapshot {
     glossaryRevision?: string;
@@ -737,7 +739,9 @@ async function translateTextSlotsDirectly(
             createSnapshotTranslateOptions(snapshot, {signal, queueSession}))];
     }
 
-    const packet = serializeTranslationSlots(origins);
+    // 同一段落的连续片段用单个空格衔接：换行分隔会让模型把半句当成独立句子，
+    // 从而得到脱离上下文的碎片译文（这也是带格式网页悬浮翻译错乱的主因）。
+    const packet = serializeTranslationSlots(origins, undefined, {separator: ' '});
     const combined = await translateText(packet.payload, document.title, createSnapshotTranslateOptions(snapshot, {
         skipLanguageDetection: true,
         ...(snapshot.service === services.chromeTranslator && snapshot.sourceLanguage === 'auto'
@@ -748,6 +752,14 @@ async function translateTextSlotsDirectly(
     }));
     const parsed = parseTranslationSlots(packet, combined);
     if (parsed?.length === origins.length) return parsed;
+    // 槽位过多时不能退化成逐槽请求风暴：整块请求一次，把整段译文交给首个槽位，
+    // 由渲染层按整块降级形式输出；少量槽位仍保留逐槽回填以维持内联结构。
+    if (origins.length > SLOT_PROTOCOL_FALLBACK_MAX_SLOTS) {
+        const wholeBlock = await translateText(origins.join(' '), document.title,
+            createSnapshotTranslateOptions(snapshot, {skipLanguageDetection: true, signal, queueSession}));
+        if (wholeBlock) return origins.map((_, index) => index === 0 ? wholeBlock : '');
+        return [...origins];
+    }
     return translateSlotsIndividually(origins, snapshot, signal, queueSession);
 }
 

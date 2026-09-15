@@ -102,7 +102,7 @@ function buildUserPrompt(
         parts.push('Use <webpage_context> only as silent reference. Translate only the source text requested above. Never translate, repeat, summarize, or mention <webpage_context>.');
     }
     if (usesSegmentProtocol) {
-        parts.push('The source contains FluentRead BEGIN and END markers. Preserve every marker exactly once and in the original order. Translate only the text between matching markers, and output nothing outside those markers.');
+        parts.push('The source contains FluentRead BEGIN and END markers. The marked fragments are consecutive parts of the same passage, not separate sentences: translate them so that reading the fragments in order produces one natural, continuous translation, and keep any wording or punctuation that spans a marker boundary correct. Preserve every marker exactly once and in the original order, translate only the text between matching markers, and output nothing outside those markers.');
     }
     return parts.join('\n\n');
 }

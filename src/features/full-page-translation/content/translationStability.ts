@@ -6,6 +6,7 @@
  */
 import {
     collectLiveTranslationTextSlots,
+    getTranslationSlotTextNodes,
     createTranslationTextProtectionCache,
     extractTranslationText,
     getComposedParent,
@@ -137,7 +138,7 @@ export function getCurrentTranslationStateTextNodes(node: HTMLElement, state: Tr
         getCurrentTranslationCore(state.scope).shouldStayOriginal,
         getTranslationStateProtectionBoundary(node, state),
         getTranslationTextProtectionOptions(state.allowTopLevelApplicationShell, node),
-    ).map((slot) => slot.node);
+    ).flatMap(getTranslationSlotTextNodes);
 }
 
 function sourceHTMLWithoutDirectBilingualArtifacts(node: HTMLElement): string {
@@ -386,14 +387,19 @@ export function reboundLiveTextResult(
     // Text 身份不变不代表内容未变；宿主可在同一批更新中重新分配行内文本，
     // 使整段原文保持一致但每个 provider 槽已经不同。提交必须逐槽核对，
     // 并始终从当前前后缀构建展示值，避免把请求开始时的空白写回页面。
-    if (currentNodes.length !== currentParts.length || currentParts.length !== result.sources.length ||
-        currentParts.some((part, index) =>
-            part.node !== currentNodes[index] || part.source !== result.sources[index])) return null;
+    // 槽位可能包含词内合并的后续节点：展示值只写首个节点，其余节点清空。
+    const slotNodes = currentParts.flatMap(getTranslationSlotTextNodes);
+    if (slotNodes.length !== currentNodes.length || currentParts.length !== result.sources.length ||
+        slotNodes.some((node, index) => node !== currentNodes[index]) ||
+        currentParts.some((part, index) => part.source !== result.sources[index])) return null;
     return {
-        nodes: currentParts.map((part) => part.node),
-        slots: currentParts.map((part, index) => ({
-            node: part.node,
-            text: `${part.prefix}${result.translations[index] ?? part.source}${part.suffix}`,
-        })),
+        nodes: slotNodes,
+        slots: currentParts.flatMap((part, index) => {
+            const translation = result.translations[index] ?? part.source;
+            return getTranslationSlotTextNodes(part).map((node, position) => ({
+                node,
+                text: position === 0 ? `${part.prefix}${translation}${part.suffix}` : '',
+            }));
+        }),
     };
 }

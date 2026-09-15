@@ -17,6 +17,7 @@ import {
     extractTranslationTextFromNodes,
     applyTranslationsToSnapshot,
     collectLiveTranslationTextSlots,
+    getTranslationSlotTextNodes,
     createTranslationSourceSnapshot,
     getComposedParent,
     getCurrentTranslationCore,
@@ -859,7 +860,7 @@ async function translateTarget(candidate: TranslationCandidate, displayMode: "bi
         core.shouldStayOriginal,
         synthetic ? node : undefined,
         getTranslationTextProtectionOptions(candidate.allowTopLevelApplicationShell, node),
-    ).map((slot) => slot.node);
+    ).flatMap(getTranslationSlotTextNodes);
     const attempt = beginTranslation(
         node,
         displayMode,
@@ -1263,7 +1264,7 @@ function upgradeFullPageTargetScope(session: FullPageSession, target: HTMLElemen
     const expandsText = collectLiveTranslationTextSlots(target, core.shouldStayOriginal,
         getTranslationStateProtectionBoundary(target, state),
         getTranslationTextProtectionOptions(state.allowTopLevelApplicationShell, target),
-    ).some((slot) => !previousNodes.has(slot.node));
+    ).some((slot) => getTranslationSlotTextNodes(slot).some((node) => !previousNodes.has(node)));
     if (!changesKind && !expandsText) return false;
     const root = state.syntheticSegment ? target.parentElement : target;
     unregisterSessionStatefulTarget(session, target);

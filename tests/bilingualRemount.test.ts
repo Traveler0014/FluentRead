@@ -26,7 +26,7 @@ import {
     tryRepairBilingualTranslationArtifact,
     type TranslationState,
 } from '@/src/features/full-page-translation/content/state';
-import {collectLiveTranslationTextSlots, getCurrentTranslationCore, translationTruncationStyleOverrides} from '@/src/core/translation/public';
+import {collectLiveTranslationTextSlots, extractTranslationText, getCurrentTranslationCore, getTranslationSlotTextNodes, translationTruncationStyleOverrides} from '@/src/core/translation/public';
 import {isTranslationArtifactCurrent} from '@/src/features/full-page-translation/content/translationStability';
 
 const BILINGUAL_SELECTOR =
@@ -97,9 +97,11 @@ describe('双语 owner 同源重挂交接', () => {
             const {document} = parseHTML('<html><body><p id="owner">Research result <span aria-live="polite">Analysis completed</span>.</p></body></html>');
             const owner = document.querySelector<HTMLElement>('#owner')!;
             const slots = collectLiveTranslationTextSlots(owner, getCurrentTranslationCore('all').shouldStayOriginal);
-            const source = slots.map((slot) => slot.source).join(' ');
+            // 与 runtime 一致地使用整块纯文本作为来源：槽位会合并词内碎片，
+            // 不能再用槽位拼接结果冒充 extractTranslationText 的空白归一形式。
+            const source = extractTranslationText(owner, getCurrentTranslationCore('all').shouldStayOriginal);
             const attempt = beginTranslation(owner, 'bilingual', 'content', false, source,
-                slots.map((slot) => slot.node), false, 'profile', 'all')!;
+                slots.flatMap(getTranslationSlotTextNodes), false, 'profile', 'all')!;
             const registry = createBilingualRemountCapitulationRegistry();
             expect(markTranslationComplete(owner, attempt.state, attempt.generation)).toBe(true);
             const wrapper = document.createElement('span');
@@ -173,7 +175,7 @@ describe('双语 owner 同源重挂交接', () => {
             const slots = collectLiveTranslationTextSlots(segment, getCurrentTranslationCore('all').shouldStayOriginal, segment);
             const source = slots.map((slot) => slot.source).join(' ');
             const attempt = beginTranslation(segment, 'bilingual', 'content', true, source,
-                slots.map((slot) => slot.node), false, 'profile', 'all')!;
+                slots.flatMap(getTranslationSlotTextNodes), false, 'profile', 'all')!;
             const registry = createBilingualRemountCapitulationRegistry();
             registry.remember(host, segment, attempt.state);
             restoreAllTranslations();

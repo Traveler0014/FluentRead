@@ -764,6 +764,37 @@ describe('动态翻译稳定性判定', () => {
         expect(reboundLiveTextResult([document.createTextNode('source')], result, parts)).toBeNull();
         expect(reboundLiveTextResult([source], result, [])).toBeNull();
     });
+
+    it('词内合并槽只把译文写回首节点，后续节点清空', () => {
+        const {document} = parseHTML('<html><body><p>one<span>’</span>s judgment.</p></body></html>');
+        const paragraph = document.querySelector('p')!;
+        const first = paragraph.firstChild as Text;
+        const continuation = paragraph.querySelector('span')!.firstChild as Text;
+        const tail = paragraph.lastChild as Text;
+        const result = {
+            sources: ['one’s judgment'],
+            translations: ['合并译文'],
+            nodes: [first, continuation, tail],
+            slots: [{node: first, text: '合并译文'}, {node: continuation, text: ''}, {node: tail, text: ''}],
+        };
+        const parts = [{
+            node: first,
+            prefix: '',
+            source: 'one’s judgment',
+            suffix: '',
+            continuationNodes: [continuation, tail],
+        }];
+
+        expect(reboundLiveTextResult([first, continuation, tail], result, parts)).toEqual({
+            nodes: [first, continuation, tail],
+            slots: [
+                {node: first, text: '合并译文'},
+                {node: continuation, text: ''},
+                {node: tail, text: ''},
+            ],
+        });
+        expect(reboundLiveTextResult([first], result, parts)).toBeNull();
+    });
 });
 
 

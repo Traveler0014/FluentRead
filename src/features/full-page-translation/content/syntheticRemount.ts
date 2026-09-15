@@ -6,6 +6,7 @@
  */
 import {
     collectLiveTranslationTextSlots,
+    getTranslationSlotTextNodes,
     extractTranslationTextFromNodes,
     getCurrentTranslationCore,
     getTranslationCandidateKey,
@@ -64,7 +65,7 @@ function candidateStructureSignature(
         getCurrentTranslationCore(state.scope).shouldStayOriginal,
         segment,
         options,
-    ).map((slot) => slot.node);
+    ).flatMap(getTranslationSlotTextNodes);
     return getTranslationSourceStructureSignature(
         segment,
         state.allowTopLevelApplicationShell === true,
@@ -210,7 +211,7 @@ export function transferEquivalentSyntheticBilingualSegments(
                     getCurrentTranslationCore(state.scope).shouldStayOriginal,
                     owner,
                     protectionOptions(owner, state.allowTopLevelApplicationShell === true),
-                ).map((slot) => slot.node);
+                ).flatMap(getTranslationSlotTextNodes);
                 setBilingualContent(owner, content, state.bilingualReplay, template);
                 setRenderedStyleAttribute(owner);
                 if (!reconcileLayout(owner)) {

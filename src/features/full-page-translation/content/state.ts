@@ -13,6 +13,7 @@ import {
 } from "@/src/core/translation/serialization";
 import {
     collectLiveTranslationTextSlots,
+    getTranslationSlotTextNodes,
     createTranslationTextProtectionCache,
     getComposedParent,
     getCurrentTranslationCore,
@@ -810,7 +811,7 @@ function currentBilingualSourceStructureMatches(
             state.allowTopLevelApplicationShell === true
                 ? {allowTopLevelApplicationShell: true, protectedElement: node}
                 : {protectedElement: node},
-        ).map((slot) => slot.node);
+        ).flatMap(getTranslationSlotTextNodes);
     }
     const matches = getTranslationSourceStructureSignature(
         node,
@@ -985,7 +986,7 @@ function rebindOverflowSourceTextNodes(owner: HTMLElement, state: TranslationSta
         getCurrentTranslationCore(state.scope).shouldStayOriginal,
         state.syntheticSegment ? owner : undefined,
         protectionOptions,
-    ).map((slot) => slot.node);
+    ).flatMap(getTranslationSlotTextNodes);
 }
 
 function dirtyOverflowOwnerForMutation(

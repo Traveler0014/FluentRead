@@ -1,7 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const runtime = vi.hoisted(() => ({
-    slots: [] as Array<{node: Text; prefix: string; source: string; suffix: string}>,
+    slots: [] as Array<{node: Text; prefix: string; source: string; suffix: string; continuationNodes?: readonly Text[]}>,
     translations: [] as string[],
     translateTextSlots: vi.fn(),
     getCurrentTranslationCore: vi.fn(() => ({shouldStayOriginal: () => false})),
@@ -14,6 +14,8 @@ vi.mock('@/src/core/translation/public', async (importOriginal) => {
         getCurrentTranslationCore: runtime.getCurrentTranslationCore,
         // 属性型按钮标签的安全边界由 core 唯一定义，测试不复制其判定规则。
         getTranslatableControlValueAttribute: actual.getTranslatableControlValueAttribute,
+        // 槽位展平规则同样来自 core，测试只替换槽位收集本身。
+        getTranslationSlotTextNodes: actual.getTranslationSlotTextNodes,
         normalizeTranslationText: actual.normalizeTranslationText,
     };
 });
@@ -126,5 +128,111 @@ describe('实时文本翻译快照', () => {
         runtime.slots = [{node, prefix: '', source: '', suffix: ''}];
         runtime.translations = ['译文'];
         expect((await translateLiveText(document.body, snapshot)).changed).toBe(true);
+    });
+
+    it('词内合并槽只把译文写回首节点，后续节点清空', async () => {
+        const {document} = parseHTML('<html><body></body></html>');
+        const first = document.createTextNode('one');
+        const continuation = document.createTextNode('’');
+        const tail = document.createTextNode('s');
+        runtime.slots = [{
+            node: first,
+            prefix: '',
+            source: 'one’s',
+            suffix: '',
+            continuationNodes: [continuation, tail],
+        }];
+        runtime.translations = ['一个的'];
+
+        const result = await translateLiveText(document.body, snapshot);
+        // 单槽候选不会走整块请求，逐槽回填仍按合并槽展平到每个节点。
+        expect(runtime.translateTextSlots).toHaveBeenCalledWith(['one’s'], snapshot, undefined, undefined, undefined, false);
+        expect(result).toMatchObject({complete: true, changed: true, sources: ['one’s'], translations: ['一个的'],
+            nodes: [first, continuation, tail]});
+        expect(result.slots).toEqual([
+            {node: first, text: '一个的'},
+            {node: continuation, text: ''},
+            {node: tail, text: ''},
+        ]);
+    });
+
+    it('机器翻译服务把多片段候选整块送出，译文只回填首个槽位', async () => {
+        const {document} = parseHTML('<html><body></body></html>');
+        const first = document.createTextNode('Read ');
+        const second = document.createTextNode('the guide');
+        const third = document.createTextNode('.');
+        runtime.slots = [
+            {node: first, prefix: '', source: 'Read', suffix: ' '},
+            {node: second, prefix: '', source: 'the guide', suffix: ''},
+            {node: third, prefix: '', source: '.', suffix: ''},
+        ];
+        runtime.translations = ['读完这份指南。'];
+
+        const result = await createTranslationRequest(document.body, 'content', 'bilingual', snapshot);
+        expect(runtime.translateTextSlots).toHaveBeenCalledWith(
+            ['Read the guide.'], snapshot, undefined, undefined, undefined, false);
+        expect(result).toEqual({
+            kind: 'snapshot',
+            sources: ['Read', 'the guide', '.'],
+            translations: ['读完这份指南。', '', ''],
+        });
+    });
+
+    it('整块译文缺失时回退逐槽请求，与原文相同时按未变化处理', async () => {
+        const {document} = parseHTML('<html><body></body></html>');
+        const first = document.createTextNode('Read ');
+        const second = document.createTextNode('the guide');
+        runtime.slots = [
+            {node: first, prefix: '', source: 'Read', suffix: ' '},
+            {node: second, prefix: '', source: 'the guide', suffix: ''},
+        ];
+
+        runtime.translateTextSlots.mockResolvedValueOnce(['']).mockResolvedValueOnce(['译:Read', '译:the guide']);
+        expect(await createTranslationRequest(document.body, 'content', 'bilingual', snapshot))
+            .toEqual({kind: 'snapshot', sources: ['Read', 'the guide'], translations: ['译:Read', '译:the guide']});
+
+        // 整块结果与原文一致时不重发逐槽请求，直接按未变化上报。
+        runtime.translateTextSlots.mockReset();
+        runtime.translateTextSlots.mockResolvedValueOnce(['Read']);
+        expect(await createTranslationRequest(document.body, 'content', 'bilingual', snapshot))
+            .toEqual({kind: 'snapshot', sources: ['Read', 'the guide'], translations: ['Read', 'the guide']});
+        expect(runtime.translateTextSlots).toHaveBeenCalledTimes(1);
+
+        // 单槽候选不会走整块请求，AI 服务保留逐槽回填以维持内联结构。
+        runtime.translateTextSlots.mockReset();
+        runtime.translateTextSlots.mockResolvedValue(['译:Read']);
+        runtime.slots = [{node: first, prefix: '', source: 'Read', suffix: ' '}];
+        expect(await createTranslationRequest(document.body, 'content', 'bilingual', snapshot))
+            .toEqual({kind: 'snapshot', sources: ['Read'], translations: ['译:Read']});
+        runtime.slots = [{node: first, prefix: '', source: 'Read', suffix: ' '}, {node: second, prefix: '', source: 'the guide', suffix: ''}];
+        expect(await createTranslationRequest(document.body, 'content', 'bilingual',
+            {...snapshot, service: 'openai', model: 'gpt-4o'}))
+            .toEqual({kind: 'snapshot', sources: ['Read', 'the guide'], translations: ['译:Read']});
+    });
+
+    it('仅译文模式同样按整块降级回填槽位与节点集合', async () => {
+        const {document} = parseHTML('<html><body></body></html>');
+        const first = document.createTextNode('Read ');
+        const second = document.createTextNode('the guide');
+        runtime.slots = [
+            {node: first, prefix: '', source: 'Read', suffix: ' '},
+            {node: second, prefix: '', source: 'the guide', suffix: ''},
+        ];
+        runtime.translations = ['读完这份指南。', ''];
+
+        const result = await translateLiveText(document.body, snapshot);
+        expect(runtime.translateTextSlots).toHaveBeenCalledWith(
+            ['Read the guide'], snapshot, undefined, undefined, undefined, false);
+        expect(result).toMatchObject({
+            complete: true,
+            changed: true,
+            sources: ['Read', 'the guide'],
+            translations: ['读完这份指南。', ''],
+            nodes: [first, second],
+        });
+        expect(result.slots).toEqual([
+            {node: first, text: '读完这份指南。 '},
+            {node: second, text: ''},
+        ]);
     });
 });

@@ -55,6 +55,7 @@ export {
     applyTranslationsToSnapshot,
     collectLiveTranslationTextSlots,
     createTranslationSourceSnapshot,
+    getTranslationSlotTextNodes,
     hasActiveTranslationLineClamp,
     hasActiveTranslationTruncation,
     parseTranslationSlots,
@@ -63,6 +64,7 @@ export {
 } from './serialization';
 export type {
     SerializedTranslationSlots,
+    TranslationSlotSerializationOptions,
     TranslationSourceSnapshot,
     TranslationStyleOverride,
     TranslationTextSlot,

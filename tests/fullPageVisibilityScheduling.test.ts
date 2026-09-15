@@ -35,6 +35,7 @@ const runtime = vi.hoisted(() => ({
     requestOptions: [] as Array<Record<string, unknown>>,
     renderOptions: [] as Array<Record<string, unknown>>,
     parsedSlots: null as string[] | null,
+    packetOptions: [] as Array<Record<string, unknown> | undefined>,
     cancelQueue: vi.fn(),
     retryCallbacks: [] as Array<() => void>,
     config: {
@@ -211,6 +212,7 @@ vi.mock("@/src/core/translation/public", async (importOriginal) => {
             nodes.map((node) => node.textContent ?? "").join(""),
         applyTranslationsToSnapshot: (_snapshot: unknown, translations: readonly string[]) => translations.join(""),
         collectLiveTranslationTextSlots: textSlots,
+        getTranslationSlotTextNodes: actual.getTranslationSlotTextNodes,
         createTranslationTextProtectionCache: () => new WeakMap<Element, {
             depth: number;
             protected: boolean;
@@ -274,13 +276,16 @@ vi.mock("@/src/core/translation/public", async (importOriginal) => {
             existing: {element: HTMLElement; adapterId?: string},
             candidate: {element: HTMLElement; adapterId?: string},
         ) => candidate.adapterId ? candidate : existing,
-        serializeTranslationSlots: (origins: readonly string[]) => ({
-            payload: origins.map((origin, index) => [
-                `___FLUENTREAD_test_${index}_BEGIN___`,
-                origin,
-                `___FLUENTREAD_test_${index}_END___`,
-            ].join("\n")).join("\n"),
-        }),
+        serializeTranslationSlots: (origins: readonly string[], _nonce?: string, options?: Record<string, unknown>) => {
+            runtime.packetOptions.push(options);
+            return {
+                payload: origins.map((origin, index) => [
+                    `___FLUENTREAD_test_${index}_BEGIN___`,
+                    origin,
+                    `___FLUENTREAD_test_${index}_END___`,
+                ].join("\n")).join("\n"),
+            };
+        },
     };
 });
 
@@ -925,15 +930,18 @@ describe("全文翻译可见性锚点", () => {
         setLayoutBox(target, 250, 40); setLayoutBox(prose, 600, 90);
         runtime.candidates = [{element: target, kind, reason: 'adapter'}, {element: prose, kind: 'content', reason: 'paragraph'}];
         handleBilingualTranslation(target, false); handleBilingualTranslation(prose, false); await finishScheduledWork();
-        expect(runtime.requests.mock.calls.flatMap(([sources]) => sources)).not.toContain('Analysis completed');
+        // 机器翻译服务的多片段候选会整块发出，因此只断言整段来源文本是否已包含新解锁内容。
+        const requestedText = () => runtime.requests.mock.calls.flatMap(([sources]) => sources).join('\n');
+        expect(requestedText()).not.toContain('Analysis completed');
         const proseWrapper = prose.querySelector('.fluent-read-bilingual-content');
         runtime.candidates = [{element: target, kind, reason: 'expanded', scope: 'all'}, {element: prose, kind: 'content', reason: 'paragraph', scope: 'all'}];
         runtime.config.translationScope = 'all'; runtime.config.fullPageTranslationMode = 'all';
         autoTranslateEnglishPage(); await finishScheduledWork();
-        expect(runtime.requests.mock.calls.flatMap(([sources]) => sources)).toContain('Analysis completed');
+        expect(requestedText()).toContain('Analysis completed');
         expect(getTranslationState(target)?.scope).toBe('all');
         expect(prose.querySelector('.fluent-read-bilingual-content')).toBe(proseWrapper);
-        if (kind === 'control') expect(label.textContent).toBe('译:Analysis completed');
+        // 整块译文写回首槽位，因此控件标签里只剩（空的）受保护后代。
+        if (kind === 'control') expect(label.textContent).toBe('');
         restoreOriginalContent();
         expect(target.textContent).toBe('Search Analysis completed'); expect(target.querySelector('span')).toBe(label);
     });
@@ -1858,12 +1866,34 @@ describe("全文翻译可见性锚点", () => {
 
         runtime.parsedSlots = ['结构一', '结构二'];
         expect(await translateTextSlots(['One', 'Two'], snapshot)).toEqual(['结构一', '结构二']);
+        // 同一段落的连续片段用空格分隔发出，模型才能看到完整句子。
+        expect(runtime.packetOptions.at(-1)).toEqual({separator: ' '});
 
         runtime.parsedSlots = null;
         runtime.requests.mockClear();
         expect(await translateTextSlots(['One', undefined as never], snapshot)).toEqual(['译:One', '译:']);
         expect(runtime.requests).toHaveBeenCalledTimes(3);
         expect(await translateTextSlots([undefined as never], snapshot)).toEqual(['译:']);
+    });
+
+    it('槽位过多且协议解析失败时整块重试一次，不再逐槽请求风暴', async () => {
+        const snapshot = translationSnapshot({service: 'custom-provider', model: ''});
+        const origins = Array.from({length: 9}, (_value, index) => `fragment-${index}`);
+        runtime.parsedSlots = null;
+        runtime.requests.mockClear();
+
+        expect(await translateTextSlots(origins, snapshot)).toEqual([
+            `译:${origins.join(' ')}`,
+            ...Array.from({length: 8}, () => ''),
+        ]);
+        expect(runtime.requests).toHaveBeenCalledTimes(2);
+        expect(runtime.requests.mock.calls[1]![0]).toEqual([origins.join(' ')]);
+
+        // 整块请求返回空译文时不制造空结果，保留原文由上层按未变化处理。
+        runtime.requests.mockClear();
+        runtime.requests.mockImplementation(async () => ['']);
+        expect(await translateTextSlots(origins, snapshot)).toEqual(origins);
+        expect(runtime.requests).toHaveBeenCalledTimes(2);
     });
 
     it('调用身份区分 AI 上下文和跨段合批开关，但不受本地缓存开关影响', () => {
@@ -5870,7 +5900,7 @@ describe("全文翻译可见性锚点", () => {
         },
     );
 
-    it("普通后代新增 translate=no 后复用未变文本槽并排除受保护文本", async () => {
+    it("普通后代新增 translate=no 后重建整块译文并排除受保护文本", async () => {
         runtime.config.display = 1;
         document.body.innerHTML = `
             <p id="prose">
@@ -5905,7 +5935,9 @@ describe("全文翻译可见性锚点", () => {
         visibilityObserver.emit(paragraph, true);
         await finishScheduledWork();
 
-        expect(runtime.requests).toHaveBeenCalledTimes(1);
+        // 整块请求以整段原文为身份：受保护后代改变了句子，因此需要一次新的整块请求，
+        // 不再像逐槽请求那样直接复用未变片段的缓存。
+        expect(runtime.requests).toHaveBeenCalledTimes(2);
         expect(firstWrapper.isConnected).toBe(false);
         const refreshedWrapper = paragraph.querySelector<HTMLElement>(".fluent-read-bilingual-content")!;
         expect(refreshedWrapper).toBeTruthy();
@@ -6368,8 +6400,8 @@ describe("悬停重挂请求与 synthetic 提交回归", () => {
         expect(state.controller.signal.aborted).toBe(false);
         expect(segment.querySelector(".fluent-read-bilingual-content")).toBe(wrapper);
         expect(wrapper.isConnected).toBe(true);
-        expect(wrapper.textContent).toContain(`译:${inlinePrefix.trim()}`);
-        expect(wrapper.textContent).toContain(`译:${emphasized}`);
+        // 机器翻译服务的合成段按整块请求，译文落在首个槽位，其余槽位留空。
+        expect(wrapper.textContent).toContain(`译:${inlinePrefix.trim()} ${emphasized}`);
         expect(runtime.requests).toHaveBeenCalledTimes(1);
 
         await vi.advanceTimersByTimeAsync(50);
@@ -6625,7 +6657,8 @@ describe("悬停重挂请求与 synthetic 提交回归", () => {
             expect(descendant.querySelector('.fluent-read-single-slot')).toBeNull();
             expect(descendant.textContent).toBe('formerly readable suffix.');
             expect(singleTranslationText(owner)).toBe('译:Readable source ');
-            expect(runtime.requests).toHaveBeenCalledTimes(1);
+            // 整块请求以整段原文为身份：保护区变化会触发一次新的整块请求。
+            expect(runtime.requests).toHaveBeenCalledTimes(2);
         },
     );
 

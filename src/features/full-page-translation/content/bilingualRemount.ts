@@ -30,6 +30,7 @@ import {
 } from '@/src/features/full-page-translation/content/translationStability';
 import {
     collectLiveTranslationTextSlots,
+    getTranslationSlotTextNodes,
     getCurrentTranslationCore,
     type TranslationScope,
 } from '@/src/core/translation/public';
@@ -121,7 +122,7 @@ function syntheticCandidateStructureSignature(
         getCurrentTranslationCore(scope).shouldStayOriginal,
         segment,
         protectionOptions,
-    ).map((slot) => slot.node);
+    ).flatMap(getTranslationSlotTextNodes);
     return JSON.stringify(['synthetic-run', indexes, getTranslationSourceStructureSignature(
         segment,
         allowTopLevelApplicationShell,
@@ -424,7 +425,7 @@ function cachedSourceStructureSignature(
         state.allowTopLevelApplicationShell === true
             ? {allowTopLevelApplicationShell: true, protectedElement: owner}
             : {protectedElement: owner},
-    ).map((slot) => slot.node) : undefined;
+    ).flatMap(getTranslationSlotTextNodes) : undefined;
     const signature = getTranslationSourceStructureSignature(
         owner,
         allowTopLevelApplicationShell,
