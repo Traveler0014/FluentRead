@@ -6,7 +6,7 @@
  * 模块边界：本文件属于可独立测试的 core 候选领域；可以读取传入 DOM 以计算结果，但不访问配置存储、不调用 provider、不注册页面监听器，也不负责译文渲染或 feature 生命周期。
  */
 
-import {isTranslationTextNodeProtected} from './text';
+import {isTranslationTextNodeProtected, normalizeTranslationText} from './text';
 import {
     getElementTagName,
     hasContentEditableMarker,
@@ -450,16 +450,18 @@ export function collectLiveTranslationTextSlots(
 }
 
 /**
- * 整块降级译文：多槽候选在槽数过多时会改为一次整块请求，把整段译文放在首个槽位、
- * 其余槽位为空。此时逐槽骨架已没有对应内容，直接输出纯译文，避免整段译文被塞进
- * 首个内联元素（加粗、链接）的样式里。
+ * 整块译文：多槽候选的译文全部落在首个槽位（客户端整块降级，或模型把整段译文收进
+ * 首个标记），其余槽位没有可读内容。此时逐槽骨架已经不对应任何译文，直接输出纯译文：
+ * 否则整段译文会被塞进首个内联元素（链接、加粗）里，并留下一串空链接骨架，既让译文本体
+ * 变成可点击链接，又把站点悬停脚本引入译文内部。其余槽位按“无空白后为空”判定，
+ * 以覆盖模型返回空格、`&nbsp;` 或换行的情形。
  */
 function isWholeBlockTranslation(snapshot: TranslationSourceSnapshot, translations: readonly string[]): boolean {
     // 长度相等且大于 1，因此索引 0 必然存在；不使用可选链，避免出现永远不可达的分支。
     return snapshot.slots.length > 1
         && translations.length === snapshot.slots.length
-        && Boolean(translations[0]!.trim())
-        && translations.slice(1).every((translation) => !translation);
+        && Boolean(normalizeTranslationText(translations[0]!))
+        && translations.slice(1).every((translation) => !normalizeTranslationText(translation));
 }
 
 /** 只修改脱离文档的快照文本节点；没有对应译文的槽位保持原文。 */

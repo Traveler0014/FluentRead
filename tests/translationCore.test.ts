@@ -3104,6 +3104,12 @@ describe('文本槽词内碎片合并与整块降级', () => {
             .toContain('次槽');
         expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(single), ['单个。']))
             .toBe('单个。');
+        // 模型把整段译文收进首个标记时，其余槽位可能是空格、&nbsp; 或换行；
+        // 同样按整块译文输出纯译文，不能把整段译文塞进首个链接并留下空链接骨架。
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target),
+            ['读完这份指南。', ' ', '\u00a0'])).toBe('读完这份指南。');
+        expect(applyTranslationsToSnapshot(createTranslationSourceSnapshot(target),
+            ['读完这份指南。', ' ', '。'])).toContain('<a href="/g">');
     });
 
     it('同一段落的槽协议使用空格分隔，跨段落合批仍保留换行', () => {
