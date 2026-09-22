@@ -38,18 +38,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Release 说明里要对比官方基线，需要完整历史。
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # 不写 version：跟 package.json 的 packageManager 字段保持一致，
         # 两处同时指定会被 action-setup 判为版本冲突。
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -126,13 +126,20 @@ jobs:
             echo "- 产物：\`${base}.crx\` / \`${base}.zip\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      # archive: false 让制品保持原文件，下载下来直接就是 .crx / .zip，不用再解一层。
+      - name: Upload CRX
+        uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.collect.outputs.base }}
-          path: |
-            ${{ steps.collect.outputs.crx }}
-            ${{ steps.collect.outputs.zip }}
+          path: ${{ steps.collect.outputs.crx }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload unpacked ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.collect.outputs.zip }}
+          archive: false
           if-no-files-found: error
           retention-days: 90
 

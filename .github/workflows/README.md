@@ -37,9 +37,10 @@ base64 -w0 .output/chrome-mv3.pem | gh secret set CRX_PRIVATE_KEY --repo <你的
 
 ## 产物
 
-- Actions 页面对应 run 的 **Artifacts** 区：`fluent-read-<版本>-chrome-mv3-<短SHA>`，
-  内含 `.crx`（可直接拖入 `chrome://extensions`）与 `.zip`（解压后「加载已解压的扩展程序」）。
-- 填了 tag 时，同一份文件也会出现在 Releases 页面，下载即 .crx，无需解压。
+- Actions 页面对应 run 的 **Artifacts** 区（下载即原文件，不再包一层 zip）：
+  - `fluent-read-<版本>-chrome-mv3-<短SHA>.crx`：可直接拖入 `chrome://extensions`；
+  - `fluent-read-<版本>-chrome-mv3-<短SHA>.zip`：解压后「加载已解压的扩展程序」。
+- 填了 tag 时，同一份文件也会上传到 Releases 页面。
 
 ## 为什么需要 `.github/scripts/pin-onnxruntime-node.cjs`
 
