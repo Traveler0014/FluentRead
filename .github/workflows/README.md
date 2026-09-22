@@ -31,16 +31,18 @@ base64 -w0 .output/chrome-mv3.pem | gh secret set CRX_PRIVATE_KEY --repo <你的
 
 | 触发 | 行为 |
 | --- | --- |
-| 推送 `main` | 构建并上传 Actions 制品（不建 Release） |
-| 推送 `v*` tag | 构建、上传制品，并创建同名 GitHub Release 附加 crx |
-| 手动 `workflow_dispatch` | 构建后上传制品；`tag` 输入填了值就顺带创建 / 覆盖 Release |
+| 推送 `main` | 构建，上传 Actions 制品，并创建 / 刷新滚动 Release `latest` |
+| 推送 `v*` tag | 构建，上传制品，并创建 / 更新同名版本化 Release |
+| 手动 `workflow_dispatch` | 同推送 `main`；若填了 `tag` 输入则改为发布到该 tag |
 
 ## 产物
 
-- Actions 页面对应 run 的 **Artifacts** 区（下载即原文件，不再包一层 zip）：
+- **Releases 页面**（推荐）：不用登录、不用解压。
+  - `latest`：滚动发布，每次构建都重建，标签始终指向本次提交，资产只保留最新一版；
+  - 打了 `v*` tag 时另建同名发布，方便保留历史版本。
+- **Actions 页面**对应 run 的 **Artifacts** 区（下载即原文件，不再包一层 zip）：
   - `fluent-read-<版本>-chrome-mv3-<短SHA>.crx`：可直接拖入 `chrome://extensions`；
   - `fluent-read-<版本>-chrome-mv3-<短SHA>.zip`：解压后「加载已解压的扩展程序」。
-- 填了 tag 时，同一份文件也会上传到 Releases 页面。
 
 ## 为什么需要 `.github/scripts/pin-onnxruntime-node.cjs`
 

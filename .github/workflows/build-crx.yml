@@ -143,18 +143,66 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # 只有打了 v* tag 或手动填了 tag 才建 Release，平时推送 main 只留 Actions 制品。
+      # 每次构建都会创建 / 刷新 release：
+      # - 推送 main / 手动触发未填 tag → 滚动 release `latest`（每次重建，标签指向本次提交）；
+      # - 推送 v* tag 或手动填了 tag → 对应的版本化 release。
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.collect.outputs.base }}
+          VERSION: ${{ steps.collect.outputs.version }}
+          SHORT_SHA: ${{ steps.collect.outputs.short_sha }}
+          EXTENSION_ID: ${{ steps.collect.outputs.extension_id }}
+          CRX: ${{ steps.collect.outputs.crx }}
+          ZIP: ${{ steps.collect.outputs.zip }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag }}"
-          if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME}"; fi
-          files=(".output/${{ steps.collect.outputs.crx }}" ".output/${{ steps.collect.outputs.zip }}")
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "$tag" \
-              --notes "FluentRead 自用构建 \`${{ steps.collect.outputs.version }}\`（${{ steps.collect.outputs.short_sha }}）：官方 main + 本地 PR 修复，扩展 ID \`${{ steps.collect.outputs.extension_id }}\`。"
+          rolling=false
+          title=""
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            title="${tag}"
+          elif [ -n "${INPUT_TAG}" ]; then
+            tag="${INPUT_TAG}"
+            title="${tag}"
+          else
+            tag="latest"
+            title="FluentRead 自用构建（latest）"
+            rolling=true
           fi
-          gh release upload "$tag" "${files[@]}" --clobber
+
+          {
+            echo "## FluentRead 自用构建"
+            echo
+            echo "- 版本：\`${VERSION}\`"
+            echo "- 提交：\`${SHORT_SHA}\`"
+            echo "- 扩展 ID：\`${EXTENSION_ID}\`"
+            echo "- 构建时间：$(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo "- 构建日志：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "### 本次包含的提交"
+            echo
+            echo '```'
+            git log --oneline -10
+            echo '```'
+            echo
+            echo "### 安装"
+            echo
+            echo "1. 下载 \`${BASE}.crx\`，打开 \`chrome://extensions\` 开启「开发者模式」后拖入；"
+            echo "2. 若浏览器拒绝安装非商店 CRX，改用 \`${BASE}.zip\` 解压后「加载已解压的扩展程序」。"
+            echo
+            echo "> 基于官方最新 main 合并本地 PR 修复构建；扩展 ID 与仓库 secret 中的私钥绑定，可直接原地覆盖升级。"
+          } > /tmp/release-notes.md
+
+          if [ "$rolling" = "true" ]; then
+            # 滚动 release 每次重建，避免旧版本产物在资产列表里越堆越多。
+            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$title" --notes-file /tmp/release-notes.md
+          else
+            gh release view "$tag" >/dev/null 2>&1 \
+              || gh release create "$tag" --target "$GITHUB_SHA" --title "$title" --notes-file /tmp/release-notes.md
+            gh release edit "$tag" --title "$title" --notes-file /tmp/release-notes.md
+          fi
+          gh release upload "$tag" "${CRX}" "${ZIP}" --clobber
+          echo "release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"
