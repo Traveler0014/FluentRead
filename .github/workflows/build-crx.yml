@@ -1,0 +1,153 @@
+# @file .github/workflows/build-crx.yml
+#
+# 文件职责：在 fork 远端持续构建 FluentRead 的自用 CRX 产物。
+# 主要内容：拉取当前 ref，安装依赖并构建 Chrome MV3，用仓库自带私钥签名出 CRX3，
+#   上传 crx / zip 制品；按需（tag 或手动输入）创建 GitHub Release 并附加产物。
+# 模块边界：只负责「编译 + 打包 + 发布制品」，不改写源码、不推送提交、不发布到浏览器商店。
+
+name: Build CRX
+
+on:
+  # 每次同步官方 main 并合并本地修复后推送到 fork，都会产出一版新包。
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  # 需要临时出一版时手动触发；tag 留空则只上传 Actions 制品，不建 Release。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '填写后创建 / 覆盖同名 GitHub Release 并附加 crx（留空则只上传 Actions 制品）'
+        required: false
+        default: ''
+        type: string
+
+# 同一 ref 只保留最新一次构建，避免连续同步官方时排队。
+concurrency:
+  group: build-crx-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-crx:
+    name: Build signed CRX
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Release 说明里要对比官方基线，需要完整历史。
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # onnxruntime-node 同时存在 1.21.0（transformers 3.x）与 1.24.3（kokoro）时，
+      # 两者的 libonnxruntime.so.1 会互相抢注 soname，导致 wxt prepare / build 直接崩溃。
+      # 该预加载脚本把进程内所有 onnxruntime-node 请求收敛到最高版本；浏览器产物使用
+      # onnxruntime-web，不受影响。postinstall 会跑 wxt prepare，因此 install 步骤也要带上。
+      - name: Install dependencies
+        env:
+          NODE_OPTIONS: --require ${{ github.workspace }}/.github/scripts/pin-onnxruntime-node.cjs
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Chrome MV3
+        env:
+          NODE_OPTIONS: --require ${{ github.workspace }}/.github/scripts/pin-onnxruntime-node.cjs
+        run: pnpm build
+
+      # 私钥放在仓库 secret 里，保证跨次构建扩展 ID 稳定，crx 能原地覆盖升级。
+      # 没有配 secret 时退回一次性密钥，仅用于验证流程可用。
+      - name: Prepare signing key
+        env:
+          CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p .output
+          if [ -n "${CRX_PRIVATE_KEY:-}" ]; then
+            printf '%s' "$CRX_PRIVATE_KEY" | base64 -d > .output/crx-key.pem
+          else
+            openssl genrsa -out .output/crx-key.pem 2048
+            echo "::warning::未配置 CRX_PRIVATE_KEY secret，本次使用一次性密钥；扩展 ID 每次都会变化，无法原地升级。"
+          fi
+          openssl rsa -in .output/crx-key.pem -pubout -outform DER 2>/dev/null \
+            | sha256sum | head -c 32 | tr '0-9a-f' 'a-p' > .output/extension-id.txt
+          echo "extension id: $(cat .output/extension-id.txt)"
+
+      - name: Pack CRX3
+        run: |
+          set -euo pipefail
+          chrome_bin="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
+          if [ -z "$chrome_bin" ]; then
+            echo "::error::runner 上找不到 Chrome / Chromium，无法执行 --pack-extension"
+            exit 1
+          fi
+          rm -f .output/chrome-mv3.crx
+          "$chrome_bin" \
+            --pack-extension="$GITHUB_WORKSPACE/.output/chrome-mv3" \
+            --pack-extension-key="$GITHUB_WORKSPACE/.output/crx-key.pem" \
+            --no-message-box --no-sandbox
+          test -s .output/chrome-mv3.crx
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          short_sha="$(git rev-parse --short HEAD)"
+          base="fluent-read-${version}-chrome-mv3-${short_sha}"
+          cp .output/chrome-mv3.crx ".output/${base}.crx"
+          (cd .output/chrome-mv3 && zip -qr "../${base}.zip" .)
+          {
+            echo "base=${base}"
+            echo "version=${version}"
+            echo "short_sha=${short_sha}"
+            echo "extension_id=$(cat .output/extension-id.txt)"
+            echo "crx=.output/${base}.crx"
+            echo "zip=.output/${base}.zip"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## FluentRead 自用 CRX"
+            echo ""
+            echo "- 版本：\`${version}\`（$(git rev-parse --short HEAD)）"
+            echo "- 扩展 ID：\`$(cat .output/extension-id.txt)\`"
+            echo "- 产物：\`${base}.crx\` / \`${base}.zip\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.collect.outputs.base }}
+          path: |
+            ${{ steps.collect.outputs.crx }}
+            ${{ steps.collect.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 90
+
+      # 只有打了 v* tag 或手动填了 tag 才建 Release，平时推送 main 只留 Actions 制品。
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME}"; fi
+          files=(".output/${{ steps.collect.outputs.crx }}" ".output/${{ steps.collect.outputs.zip }}")
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag" \
+              --notes "FluentRead 自用构建 \`${{ steps.collect.outputs.version }}\`（${{ steps.collect.outputs.short_sha }}）：官方 main + 本地 PR 修复，扩展 ID \`${{ steps.collect.outputs.extension_id }}\`。"
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber
