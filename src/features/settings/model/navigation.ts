@@ -3,6 +3,7 @@
  * 文件职责：定义设置中心侧边栏的导航信息模型，并提供默认分区、哈希解析与搜索过滤等不依赖 Vue 或浏览器 API 的纯规则。
  * 主要内容：包含按功能分组的标题、副标题、图标、关键词和 section ID，从同一注册表派生导航列表与后台合法分区 ID，导出 resolveNavigationItem、resolveRequestedSection 与 filterNavigationItems。
  * 模块边界：该模块只描述导航元数据，不切换 DOM、不写 location.hash 也不保存配置；Options 页面负责路由同步，SettingsSections.vue 负责各分区实际内容。
+ * Lite 说明：本分支移除了翻译卡片、图片翻译、圈选翻译、视频字幕、写作助手与学习中心分区。
  */
 export type NavigationItem = {
   id: string
@@ -57,30 +58,6 @@ export const navigationGroups = [
     label: '专项翻译',
     items: [
       {
-        id: 'settings-harness', icon: '文', label: '翻译卡片', description: '选区学习辅助', group: '专项翻译',
-        heading: '翻译卡片', summary: '选中文本后按需调用 AI，帮助理解、拆句、掌握用法和练习。',
-        kicker: '专项翻译', title: '翻译卡片', detail: '配置选区学习辅助的服务、上下文范围和回答偏好。',
-        searchDescription: '翻译卡片、阅读卡、Harness、DeepSeek、读懂、拆句、用法、练习、选区、段落、学习辅助、解释深度、学习程度、学习记忆、记忆开关',
-      },
-      {
-        id: 'settings-image-translation', icon: '图', label: '图片翻译', description: '网页图片与 OCR', group: '专项翻译',
-        heading: '图片翻译', summary: '管理网页图片翻译和本地 OCR 语言包。',
-        kicker: '专项翻译', title: '图片翻译', detail: '悬停网页图片，从图片入口识别和翻译文字。',
-        searchDescription: '图片翻译、OCR、语言包、中文、英文、日文、下载',
-      },
-      {
-        id: 'settings-area-translation', icon: '▣', label: '圈选翻译', description: '截取区域与文字识别', group: '专项翻译',
-        heading: '圈选翻译', summary: '圈选屏幕中的文字，选择标准翻译或 AI 上下文增强。',
-        kicker: '专项翻译', title: '圈选翻译', detail: '独立配置圈选翻译的开关、识别语言和翻译服务。',
-        searchDescription: '圈选翻译、区域翻译、截图、图片输入、识图、视觉、提示词、Shift+Z、OCR、微软、免费翻译、AI、纠错、语言包',
-      },
-      {
-        id: 'settings-video', icon: 'CC', label: '视频字幕翻译', description: 'YouTube/X 边看边译', group: '专项翻译',
-        heading: '视频字幕翻译', summary: '在 YouTube/X 原生字幕下方显示译文，X 无字幕时可用本地 AI 生成，并独立选择视频翻译服务。',
-        kicker: '专项翻译', title: '视频字幕翻译', detail: '设置 YouTube/X 字幕翻译服务、显示方式和字号。',
-        searchDescription: 'YouTube、X、Twitter、视频字幕、本地 AI、Whisper、视频翻译服务、显示模式、字幕字号、DeepLX、微软翻译',
-      },
-      {
         id: 'settings-sites', icon: '站', label: '网站规则', description: '自动翻译、禁用与网站适配', group: '专项翻译',
         heading: '网站规则', summary: '管理网站翻译偏好，以及正文和界面的翻译范围。',
         kicker: '专项翻译', title: '网站规则', detail: '自动翻译与禁用名单按主域名生效；网站适配可进一步指定路径和内容区域。',
@@ -92,22 +69,10 @@ export const navigationGroups = [
     label: '工具与学习',
     items: [
       {
-        id: 'settings-writing', icon: '✎', label: '写作助手', description: '起草、润色与智能回复', group: '工具与学习',
-        heading: '写作助手', summary: '在 Gmail 和 GitHub 的回复框旁，起草回复或完善已有草稿。',
-        kicker: '写作工具', title: '写作助手', detail: '启用写作助手，选择写作服务和模型。',
-        searchDescription: '写作助手、起草、润色、回复、草稿、改进、语言、篇幅、语气、邮件、Gmail、GitHub、AI 服务、模型',
-      },
-      {
         id: 'settings-translation-center', icon: '译', label: '翻译中心', description: '多服务对比', group: '工具与学习',
         heading: '比较不同翻译服务', summary: '输入一句话，同时查看多个翻译服务的结果，并支持重复翻译。',
         kicker: '翻译工具', title: '翻译中心', detail: '用同一句话比较不同服务的译文表现。',
         searchDescription: '多服务翻译、翻译对比、重复翻译、句子翻译',
-      },
-      {
-        id: 'settings-vocabulary', icon: '★', label: '学习中心', description: '收藏、复习与阅读记录', group: '工具与学习',
-        heading: '学习中心', summary: '从收藏原句理解表达，练习自己的用法，再通过复习巩固。',
-        kicker: '本地学习', title: '学习中心', detail: '收藏内容长期保留，阅读问答保留 30 天；所有学习数据只保存在当前浏览器。',
-        searchDescription: '学习中心、单词本、收藏、词汇、句子、学习用法、造句、原句、复习、阅读记录、问答、30 天、Anki、导入导出',
       },
       {
         id: 'settings-glossary', icon: 'Aa', label: '术语库', description: '固定译名与保留原文', group: '工具与学习',
@@ -140,9 +105,9 @@ export const navigationGroups = [
       },
       {
         id: 'settings-data', icon: '⇅', label: '备份与恢复', description: '导出备份、恢复数据', group: '系统与数据',
-        heading: '备份与恢复 FluentRead', summary: '一次备份设置、单词本和模型用量，也可找回之前的设置。',
-        kicker: '系统与数据', title: '备份与恢复', detail: '导出或恢复设置、单词本和模型用量，并查看自动保存的设置历史。',
-        searchDescription: '备份、恢复、最近修改、自动设置快照、六小时、差异、迁移、单词本、模型用量、导出与导入',
+        heading: '备份与恢复 FluentRead', summary: '一次备份设置和模型用量，也可找回之前的设置。',
+        kicker: '系统与数据', title: '备份与恢复', detail: '导出或恢复设置和模型用量，并查看自动保存的设置历史。',
+        searchDescription: '备份、恢复、最近修改、自动设置快照、六小时、差异、迁移、模型用量、导出与导入',
       },
       {
         id: 'settings-about', icon: 'i', label: '关于流畅阅读', description: '版本与项目', group: '系统与数据',
@@ -158,11 +123,10 @@ export type NavigationSectionId = (typeof navigationGroups)[number]['items'][num
 export const navigationItems = navigationGroups.flatMap<NavigationItem>((group) => group.items)
 export const NAVIGATION_SECTION_IDS = navigationGroups.flatMap<NavigationSectionId>((group) => group.items.map(item => item.id))
 
-/** 旧设置入口与学习中心的新语义别名统一解析，不增加重复导航项目。 */
+/** 旧设置入口与非当前分区的新语义别名统一解析，不增加重复导航项目。 */
 export const NAVIGATION_SECTION_ALIASES: ReadonlyMap<string, string> = new Map([
   ['settings-webpage', 'settings-translation'],
   ['settings-shortcuts', 'settings-translation'],
-  ['settings-learning-center', 'settings-vocabulary'],
 ])
 
 export const DEFAULT_NAVIGATION_SECTION = navigationItems[0].id

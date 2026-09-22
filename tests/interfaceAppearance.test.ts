@@ -109,10 +109,6 @@ describe('界面皮肤与栏目配置', () => {
       'hover',
       'selection',
       'appearance',
-      'image',
-      'area',
-      'video',
-      'document',
     ])
   })
 
@@ -149,36 +145,28 @@ describe('界面皮肤与栏目配置', () => {
       'document',
       'futureFeature',
     ])).toEqual([
-      'document',
       'hover',
       'selection',
       'appearance',
-      'image',
-      'area',
-      'video',
     ])
     expect(normalizePopupQuickFeatureOrder(null)).toEqual(DEFAULT_POPUP_QUICK_FEATURE_ORDER)
 
     const sharedVisibility = {...DEFAULT_POPUP_QUICK_FEATURE_VISIBILITY}
-    const updated = withPopupQuickFeatureVisibility(sharedVisibility, 'image', false)
+    const updated = withPopupQuickFeatureVisibility(sharedVisibility, 'appearance', true)
     expect(updated).not.toBe(sharedVisibility)
-    expect(sharedVisibility.image).toBe(true)
-    expect(updated.image).toBe(false)
+    expect(sharedVisibility.appearance).toBe(false)
+    expect(updated.appearance).toBe(true)
     expect(normalizePopupQuickFeatureVisibility({hover: false, image: 'false'})).toEqual({
       hover: false,
       selection: true,
       appearance: false,
-      image: true,
-      area: true,
-      video: true,
-      document: true,
     })
   })
 
-  it('默认保留六个入口，显式添加译文显示后仍持久保留', () => {
+  it('默认只显示悬停与划词入口，显式添加译文显示后仍持久保留', () => {
     const initial = normalizeConfig({})
     expect(initial.popupQuickFeatureOrder.filter(id => initial.popupQuickFeatureVisibility[id]))
-      .toEqual(['hover', 'selection', 'image', 'area', 'video', 'document'])
+      .toEqual(['hover', 'selection'])
     const visible = withPopupQuickFeatureVisibility(initial.popupQuickFeatureVisibility, 'appearance', true)
     expect(normalizeConfig({...initial, popupQuickFeatureVisibility: visible}).popupQuickFeatureVisibility.appearance).toBe(true)
   })
@@ -252,22 +240,14 @@ describe('界面皮肤与栏目配置', () => {
       'footer',
     ])
     expect(normalized.popupQuickFeatureOrder).toEqual([
-      'document',
       'hover',
       'selection',
       'appearance',
-      'image',
-      'area',
-      'video',
     ])
     expect(normalized.popupQuickFeatureVisibility).toEqual({
       hover: true,
       selection: true,
       appearance: false,
-      image: false,
-      area: true,
-      video: true,
-      document: true,
     })
     expect(normalizeConfig({
       interfaceSkin: 'invalid',

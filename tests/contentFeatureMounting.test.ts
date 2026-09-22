@@ -2,10 +2,8 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     config: {
-        harness: undefined as {enabled: boolean} | undefined,
         disableSelectionTranslator: false,
         selectionTranslatorMode: 'bilingual',
-        selectionAreaEnabled: true,
     },
     createVueShadowUi: vi.fn(),
     createModalDialogHostController: vi.fn(),
@@ -17,7 +15,6 @@ vi.mock('@/src/features/selection-translation/content/modalDialogHost', () => ({
     createModalDialogHostController: mocks.createModalDialogHostController,
 }));
 vi.mock('@/src/features/selection-translation/ui/SelectionTranslator.vue', () => ({default: {name: 'SelectionTranslator'}}));
-vi.mock('@/src/features/area-translation/ui/AreaTranslator.vue', () => ({default: {name: 'AreaTranslator'}}));
 
 interface MockUi {
     mounted?: {app?: unknown; instance?: unknown};
@@ -48,10 +45,8 @@ beforeEach(() => {
     vi.resetModules();
     mocks.createVueShadowUi.mockReset();
     mocks.createModalDialogHostController.mockReset();
-    mocks.config.harness = undefined;
     mocks.config.disableSelectionTranslator = false;
     mocks.config.selectionTranslatorMode = 'bilingual';
-    mocks.config.selectionAreaEnabled = true;
     vi.stubGlobal('document', {getElementById: vi.fn(() => null)});
 });
 
@@ -93,59 +88,6 @@ describe('划词翻译挂载生命周期', () => {
         expect(mocks.createModalDialogHostController).not.toHaveBeenCalled();
         runtime.unmountSelectionTranslator();
         expect(mountedUi.remove).toHaveBeenCalledOnce();
-    });
-
-    it('Harness 独立启用时保留共享挂载，并在两个入口都停用后丢弃待挂载 UI', async () => {
-        mocks.config.harness = {enabled: true};
-        mocks.config.disableSelectionTranslator = true;
-        mocks.config.selectionTranslatorMode = 'disabled';
-        const runtime = await import('@/src/features/selection-translation/content/runtime');
-        const mounted = ui();
-        mocks.createVueShadowUi.mockResolvedValueOnce(mounted);
-        await expect(runtime.mountSelectionTranslator({} as never)).resolves.toEqual({feature: 'mounted'});
-        runtime.unmountSelectionTranslator();
-        const pending = pendingUi();
-        const late = ui();
-        mocks.createVueShadowUi.mockReturnValueOnce(pending.promise);
-        const request = runtime.mountSelectionTranslator({} as never);
-        mocks.config.harness.enabled = false;
-        pending.resolve(late);
-        await expect(request).resolves.toBeNull();
-        expect(late.remove).toHaveBeenCalledOnce();
-    });
-
-    it('Harness 共享实例重挂载后，旧组件 Range 回调不得移动新 modal host', async () => {
-        mocks.config.harness = {enabled: true};
-        mocks.config.disableSelectionTranslator = true;
-        mocks.config.selectionTranslatorMode = 'disabled';
-        const firstHost = {style: {setProperty: vi.fn()}};
-        const secondHost = {style: {setProperty: vi.fn()}};
-        const firstController = {placeForRange: vi.fn(), dispose: vi.fn()};
-        const secondController = {placeForRange: vi.fn(), dispose: vi.fn()};
-        const firstUi = {...ui(), shadowHost: firstHost};
-        const secondUi = {...ui(), shadowHost: secondHost};
-        mocks.createVueShadowUi.mockResolvedValueOnce(firstUi).mockResolvedValueOnce(secondUi);
-        mocks.createModalDialogHostController.mockReturnValueOnce(firstController).mockReturnValueOnce(secondController);
-        const runtime = await import('@/src/features/selection-translation/content/runtime');
-
-        await runtime.mountSelectionTranslator({} as never);
-        const firstReport = mocks.createVueShadowUi.mock.calls[0][1].props.onSelectionRangeChange;
-        const range = {startContainer: {nodeType: 3}};
-        firstReport(range);
-        expect(firstController.placeForRange).toHaveBeenCalledWith(range);
-        runtime.unmountSelectionTranslator();
-        expect(firstController.dispose.mock.invocationCallOrder[0]).toBeLessThan(firstUi.remove.mock.invocationCallOrder[0]);
-
-        await runtime.mountSelectionTranslator();
-        const secondReport = mocks.createVueShadowUi.mock.calls[1][1].props.onSelectionRangeChange;
-        firstReport(range);
-        firstReport(null);
-        expect(secondController.placeForRange).not.toHaveBeenCalled();
-        secondReport(range);
-        secondReport(null);
-        expect(secondController.placeForRange.mock.calls).toEqual([[range], [null]]);
-        runtime.unmountSelectionTranslator();
-        expect(secondController.dispose.mock.invocationCallOrder[0]).toBeLessThan(secondUi.remove.mock.invocationCallOrder[0]);
     });
 
     it('没有内容脚本上下文或功能关闭时不挂载', async () => {
@@ -220,91 +162,6 @@ describe('划词翻译挂载生命周期', () => {
 
         await expect(runtime.mountSelectionTranslator({} as never)).resolves.toBeNull();
         runtime.unmountSelectionTranslator();
-        expect(mountedUi.remove).toHaveBeenCalledOnce();
-    });
-});
-
-describe('圈选翻译挂载生命周期', () => {
-    it('通过宿主元素报告挂载状态', async () => {
-        const getElementById = vi.fn()
-            .mockReturnValueOnce(null)
-            .mockReturnValueOnce({id: 'fluent-read-area-translator-container'});
-        vi.stubGlobal('document', {getElementById});
-        const runtime = await import('@/src/features/area-translation/content/runtime');
-
-        expect(runtime.isAreaTranslatorMounted()).toBe(false);
-        expect(runtime.isAreaTranslatorMounted()).toBe(true);
-    });
-
-    it('没有上下文或功能关闭时不挂载', async () => {
-        const runtime = await import('@/src/features/area-translation/content/runtime');
-
-        expect(runtime.mountAreaTranslator()).toBeUndefined();
-        mocks.config.selectionAreaEnabled = false;
-        expect(runtime.mountAreaTranslator({} as never)).toBeNull();
-        expect(mocks.createVueShadowUi).not.toHaveBeenCalled();
-    });
-
-    it('只创建一个关闭 Shadow DOM，并在卸载后允许重新挂载', async () => {
-        const firstUi = ui({feature: 'area'});
-        const secondUi = ui({feature: 'area-again'});
-        mocks.createVueShadowUi.mockResolvedValueOnce(firstUi).mockResolvedValueOnce(secondUi);
-        const runtime = await import('@/src/features/area-translation/content/runtime');
-        const context = {name: 'content'} as never;
-
-        await expect(runtime.mountAreaTranslator(context)).resolves.toEqual({feature: 'area'});
-        expect(mocks.createVueShadowUi).toHaveBeenNthCalledWith(1, context, expect.objectContaining({
-            name: 'fluent-read-area-translator-ui',
-            hostId: 'fluent-read-area-translator-container',
-            zIndex: 2_147_483_647,
-            mode: 'closed',
-        }));
-        expect(runtime.mountAreaTranslator()).toBeNull();
-
-        runtime.unmountAreaTranslator();
-        expect(firstUi.remove).toHaveBeenCalledOnce();
-        await expect(runtime.mountAreaTranslator()).resolves.toEqual({feature: 'area-again'});
-        runtime.unmountAreaTranslator();
-        runtime.unmountAreaTranslator();
-        expect(secondUi.remove).toHaveBeenCalledOnce();
-    });
-
-    it('复用正在挂载的请求，并丢弃卸载后的迟到结果', async () => {
-        const pending = pendingUi();
-        const mountedUi = ui();
-        mocks.createVueShadowUi.mockReturnValue(pending.promise);
-        const runtime = await import('@/src/features/area-translation/content/runtime');
-
-        const request = runtime.mountAreaTranslator({} as never);
-        expect(runtime.mountAreaTranslator()).toBe(request);
-        runtime.unmountAreaTranslator();
-        pending.resolve(mountedUi);
-
-        await expect(request).resolves.toBeNull();
-        expect(mountedUi.remove).toHaveBeenCalledOnce();
-    });
-
-    it('挂载期间被关闭时移除迟到界面', async () => {
-        const pending = pendingUi();
-        const mountedUi = ui();
-        mocks.createVueShadowUi.mockReturnValue(pending.promise);
-        const runtime = await import('@/src/features/area-translation/content/runtime');
-
-        const request = runtime.mountAreaTranslator({} as never);
-        mocks.config.selectionAreaEnabled = false;
-        pending.resolve(mountedUi);
-
-        await expect(request).resolves.toBeNull();
-        expect(mountedUi.remove).toHaveBeenCalledOnce();
-    });
-
-    it('允许挂载器返回没有 Vue 实例的安全空结果', async () => {
-        const mountedUi = {remove: vi.fn()};
-        mocks.createVueShadowUi.mockResolvedValue(mountedUi);
-        const runtime = await import('@/src/features/area-translation/content/runtime');
-
-        await expect(runtime.mountAreaTranslator({} as never)).resolves.toBeNull();
-        runtime.unmountAreaTranslator();
         expect(mountedUi.remove).toHaveBeenCalledOnce();
     });
 });

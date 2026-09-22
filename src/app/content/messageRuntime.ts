@@ -1,8 +1,9 @@
 /**
  * @file src/app/content/messageRuntime.ts
  * 文件职责：创建 content 侧 runtime 消息处理函数，把 popup/background 的设置变化和功能命令映射为当前页面上的精确 mount、unmount 或状态响应。
- * 主要内容：处理悬浮球、划词模式与延迟、区域/图片能力、进度面板、站点禁用及旧缓存清理消息，并把右键菜单的划词、圈选、整页与恢复请求转给对应 feature；结合 BrowserCapabilities 对不支持功能确定性拒绝，并更新共享运行时状态。
+ * 主要内容：处理悬浮球、划词模式与延迟、进度面板、站点禁用及旧缓存清理消息，并把右键菜单的划词、整页与恢复请求转给对应 feature，同时更新共享运行时状态。
  * 模块边界：本文件只做消息到 feature 生命周期的适配，不注册全局监听器、不执行供应商翻译，也不实现组件 UI；监听安装及配置订阅由 content/runtime 负责。
+ * Lite 说明：本分支移除了区域翻译与图片翻译，不再处理对应能力消息与右键动作。
  */
 import type {ContentScriptContext} from 'wxt/utils/content-script-context';
 import {normalizeSelectionTranslatorDelay} from '@/src/core/config/model';
@@ -11,22 +12,16 @@ import {
     autoTranslateEnglishPage,
     invalidateFullPageTranslationSessionCache,
     isFullPageTranslationActive, getTranslationToolbarStatus,
-    mountAreaTranslator, mountFloatingBall,
-    startAreaTranslationFromContextMenu, translateSelectionFromContextMenu,
-    toggleContextMenuImage,
-    mountImageTranslator,
+    mountFloatingBall,
+    translateSelectionFromContextMenu,
     mountSelectionTranslator,
     mountTranslationProgressPanel,
     restoreOriginalContent,
-    unmountAreaTranslator,
     unmountFloatingBall,
-    unmountImageTranslator,
     unmountSelectionTranslator,
     unmountTranslationProgressPanel,
 } from './features';
 import {forwardLegacyCacheClear} from './cacheMessage';
-import {browserCapabilities, type BrowserCapabilities} from '@/src/platform/browser/capabilities';
-import {rejectUnsupportedContentFeature} from './featureRegistry';
 export interface ContentRuntimeMessageState {
     isSiteDisabled(): boolean;
     isPageSuspended?(): boolean;
@@ -37,8 +32,8 @@ export type ContentRuntimeMessageHandler = (
     sendResponse: (response?: unknown) => void,
 ) => boolean;
 /** 创建当前 document 私有的 runtime message handler，避免跨生命周期共享可变状态。 */
-export function createContentRuntimeMessageHandler(ctx: ContentScriptContext, state: ContentRuntimeMessageState,
-    capabilities: BrowserCapabilities = browserCapabilities): ContentRuntimeMessageHandler {
+export function createContentRuntimeMessageHandler(ctx: ContentScriptContext,
+    state: ContentRuntimeMessageState): ContentRuntimeMessageHandler {
     return (message, _sender, sendResponse) => {
         if (!message || typeof message !== 'object') return false;
         const payload = message as Record<string, unknown>;
@@ -79,7 +74,7 @@ export function createContentRuntimeMessageHandler(ctx: ContentScriptContext, st
             if (mode !== 'disabled' && mode !== 'bilingual' && mode !== 'translation-only') return false;
             config.selectionTranslatorMode = mode;
             config.disableSelectionTranslator = mode === 'disabled';
-            if ((mode === 'disabled' && !config.harness?.enabled) || config.on === false) unmountSelectionTranslator();
+            if (mode === 'disabled' || config.on === false) unmountSelectionTranslator();
             else if (!document.getElementById('fluent-read-selection-translator-container')) {
                 void mountSelectionTranslator(ctx);
             }
@@ -102,30 +97,6 @@ export function createContentRuntimeMessageHandler(ctx: ContentScriptContext, st
                 : 'none';
             config.customSelectionTranslatorHotkey = typeof customHotkey === 'string' ? customHotkey : '';
             if (delay !== undefined) config.selectionTranslatorDelay = normalizeSelectionTranslatorDelay(delay);
-            sendResponse();
-            return true;
-        }
-        if (payload.type === 'toggleSelectionAreaTranslator') {
-            if (rejectUnsupportedContentFeature(capabilities.areaTranslation, unmountAreaTranslator,
-                sendResponse, '当前浏览器暂不支持圈选翻译')) return true;
-            const requestedEnabled = payload.isEnabled === true;
-            config.selectionAreaEnabled = requestedEnabled;
-            if (requestedEnabled && config.on !== false) void mountAreaTranslator(ctx);
-            else unmountAreaTranslator();
-            sendResponse();
-            return true;
-        }
-        if (payload.type === 'contextMenuTranslateImage') {
-            sendResponse({status: capabilities.imageTranslation && toggleContextMenuImage(payload.srcUrl) ? 'success' : 'disabled'});
-            return true;
-        }
-        if (payload.type === 'toggleImageTranslator') {
-            if (rejectUnsupportedContentFeature(capabilities.imageTranslation, unmountImageTranslator,
-                sendResponse, '当前浏览器暂不支持图片翻译与 OCR')) return true;
-            const requestedEnabled = payload.isEnabled === true;
-            config.disableImageTranslator = !requestedEnabled;
-            if (requestedEnabled && config.on !== false) mountImageTranslator();
-            else unmountImageTranslator();
             sendResponse();
             return true;
         }
@@ -152,10 +123,6 @@ export function createContentRuntimeMessageHandler(ctx: ContentScriptContext, st
             }
             if (payload.action === 'selection') {
                 sendResponse({status: translateSelectionFromContextMenu() ? 'success' : 'failed'});
-                return true;
-            }
-            if (payload.action === 'area') {
-                sendResponse({status: capabilities.areaTranslation && startAreaTranslationFromContextMenu() ? 'success' : 'disabled'});
                 return true;
             }
             if (payload.action === 'fullPage' || payload.action === 'restore') {

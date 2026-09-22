@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import {existsSync} from 'node:fs';
 import {readFile, readdir} from 'node:fs/promises';
 import JSZip from 'jszip';
 import path from 'node:path';
@@ -7,6 +8,8 @@ import process from 'node:process';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const PROJECT_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+// Lite 分支移除了 OCR 资产，清单存在即视为精简构建，跳过对应断言。
+const IS_LITE_BUILD = existsSync(path.join(PROJECT_ROOT, 'lite', 'exclude.json'));
 
 function optionValue(args, name, fallback) {
     const index = args.indexOf(name);
@@ -140,12 +143,14 @@ async function main() {
     'Firefox manifest 的数据传输分类必须完整且不得声明 none');
     const chromeOcrAssets = chromeFiles.filter((file) => file.startsWith('fluent-read-ocr/'));
     const firefoxOcrAssets = firefoxFiles.filter((file) => file.startsWith('fluent-read-ocr/'));
-    assert(chromeOcrAssets.some((file) => file.includes('/core/'))
-        && chromeOcrAssets.some((file) => file.includes('/worker/')),
-    'Chrome 产物必须保留本地 OCR core 与 worker');
-    assert(firefoxOcrAssets.some((file) => file.includes('/core/'))
-        && firefoxOcrAssets.some((file) => file.includes('/worker/')),
-    'Firefox 必须打包与 Chrome 共用的 OCR core 与 worker');
+    if (!IS_LITE_BUILD) {
+        assert(chromeOcrAssets.some((file) => file.includes('/core/'))
+            && chromeOcrAssets.some((file) => file.includes('/worker/')),
+        'Chrome 产物必须保留本地 OCR core 与 worker');
+        assert(firefoxOcrAssets.some((file) => file.includes('/core/'))
+            && firefoxOcrAssets.some((file) => file.includes('/worker/')),
+        'Firefox 必须打包与 Chrome 共用的 OCR core 与 worker');
+    }
     const chromeBuildMarker = '__FLUENTREAD_BROWSER_CAPABILITY_BUILD__:chrome:mv3__';
     const firefoxBuildMarker = '__FLUENTREAD_BROWSER_CAPABILITY_BUILD__:firefox:mv2__';
     assert(chromeJavaScript.includes(chromeBuildMarker), 'Chrome 产物缺少 chrome/MV3 runtime capability 构建标记');
@@ -183,14 +188,16 @@ async function main() {
             ...sourceArchive.filter((file) => file.startsWith('public/fluent-read-ocr/')),
         ];
         assert(extensionArchive.includes('offscreen.html')
-            && firefoxArchiveOcrAssets.some(file => file.startsWith('fluent-read-ocr/core/'))
-            && firefoxArchiveOcrAssets.some(file => file.startsWith('fluent-read-ocr/worker/'))
-            && sourceArchive.some(file => file.startsWith('public/fluent-read-ocr/core/')),
+            && (IS_LITE_BUILD
+                || (firefoxArchiveOcrAssets.some(file => file.startsWith('fluent-read-ocr/core/'))
+                    && firefoxArchiveOcrAssets.some(file => file.startsWith('fluent-read-ocr/worker/'))
+                    && sourceArchive.some(file => file.startsWith('public/fluent-read-ocr/core/')))),
         'Firefox 扩展包与源码包必须保留共享 DOM 页面和 OCR 资源');
     }
 
     console.log(JSON.stringify({
         status: 'ok',
+        lite: IS_LITE_BUILD,
         chrome: {
             manifestVersion: 3,
             offscreenPermission: true,

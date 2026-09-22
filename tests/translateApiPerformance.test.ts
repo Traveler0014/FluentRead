@@ -286,7 +286,7 @@ describe('translation API request lifecycle performance', () => {
     expect(mocks.config.model['mock-ai']).toBe('mock-ai-model');
   });
 
-  it.each(['chromeTranslator', 'localTranslation'])('仅为本地 %s auto 转发纯检测样本', async (service) => {
+  it.each(['chromeTranslator'])('仅为本地 %s auto 转发纯检测样本', async (service) => {
     mocks.sendMessage.mockResolvedValue('译文');
     const markedText = '___FLUENTREAD_test_0_BEGIN___\nBonjour\n___FLUENTREAD_test_0_END___';
 

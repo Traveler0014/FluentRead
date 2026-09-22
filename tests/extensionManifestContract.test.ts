@@ -136,21 +136,6 @@ describe('extension manifest capability contract', () => {
         ]);
     });
 
-    it('从任意 YouTube 起始页预注入 timedtext bridge，但不扩大到非 YouTube 站点', () => {
-        const source = sourceBody('entrypoints/youtubeBridge.content.ts');
-        const matches = [...source.matchAll(/['"](\*:\/\/[^'"]+)['"]/gu)].map((match) => match[1]);
-
-        expect(matches).toEqual([
-            '*://*.youtube.com/*',
-            '*://youtube.com/*',
-        ]);
-        expect(source).toContain("runAt: 'document_start'");
-        expect(source).toContain("world: 'MAIN'");
-        expect(matches).not.toContain('*://*/*');
-        expect(matches.some((match) => match.includes('youtube-nocookie'))).toBe(false);
-        expect(matches.every((match) => match.includes('youtube'))).toBe(true);
-    });
-
     it('网页及扩展 UI 构建组使用远程配置存储，后台和未知入口保留完整运行时', () => {
         const plugin = remoteConfigStorageBuildPlugin();
         expect(plugin.enforce).toBe('pre');

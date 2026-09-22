@@ -70,20 +70,17 @@ describe('popup feature visibility', () => {
         const popup = source('src/app/popup/PopupLanguageSelect.vue');
         const settings = source('src/features/settings/ui/SettingsSections.vue');
         const center = source('src/features/translation-center/ui/TranslationCenter.vue');
-        const documentApp = source('src/app/document-translation/DocumentApp.vue');
 
         expect(popup).toContain('getMultilingualTargetLanguageLabel(item.value, item.label, language.value)');
         expect(settings).toContain(':label="getMultilingualTargetLanguageLabel(item.value, item.label, language)"');
         expect(center).toContain('getMultilingualTargetLanguageLabel(item.value, item.label, language)');
-        expect(documentApp).toContain('getMultilingualTargetLanguageLabel(item.value, item.label, language)');
     });
 
-    it('shares source-language choices across Popup, document, translation center and userscript', () => {
+    it('shares source-language choices across Popup, translation center and userscript', () => {
         const popup = source('src/app/popup/PopupLanguageSelect.vue');
         const center = source('src/features/translation-center/ui/TranslationCenter.vue');
-        const documentApp = source('src/app/document-translation/DocumentApp.vue');
         const userscript = source('userscript/SettingsPanel.vue');
-        for (const entry of [popup, center, documentApp, userscript]) {
+        for (const entry of [popup, center, userscript]) {
             expect(entry).toContain('options.from');
             expect(entry).not.toContain('options.form');
         }
@@ -127,7 +124,7 @@ describe('popup feature visibility', () => {
         expect(popup).not.toContain("activeDrawer === 'floating'");
         expect(popup).not.toContain('全文悬浮球');
         expect(popup).not.toContain('启用或关闭全文翻译悬浮球');
-        expect(popupQuickFeatureOptions).toHaveLength(7);
+        expect(popupQuickFeatureOptions).toHaveLength(3);
         expect(popup).toContain('v-for="feature in visiblePopupQuickFeatures"');
         expect(popup).toContain(':data-popup-quick-feature="feature.id"');
     });
@@ -144,11 +141,9 @@ describe('popup feature visibility', () => {
     it('keeps beta labels out of every user-facing feature surface', () => {
         const userFacingSources = [
             'src/app/popup/PopupApp.vue',
-            'src/app/document-translation/DocumentApp.vue',
             'src/features/settings/model/navigation.ts',
             'src/features/settings/ui/SettingsSections.vue',
             'src/core/config/catalog.ts',
-            'src/features/video-subtitle/content/runtime.ts',
         ].map(source);
         const localizedCatalogs = [
             'src/core/i18n/messages/zh-CN.ts',
@@ -160,7 +155,6 @@ describe('popup feature visibility', () => {
             'src/core/i18n/messages/es-ES.ts',
             'src/core/i18n/messages/legacy-overrides.ts',
         ].map(source);
-        const vocabulary = source('src/features/vocabulary/ui/VocabularyBook.vue');
 
         for (const content of userFacingSources) {
             expect(content).not.toMatch(/\bBeta\b|测试版/u);
@@ -168,72 +162,6 @@ describe('popup feature visibility', () => {
         for (const content of localizedCatalogs) {
             expect(content).not.toMatch(/\bBeta\b|Bêta|ベータ|베타|Бета/u);
         }
-        expect(vocabulary).not.toMatch(/>\s*Beta\s*<|开启 Beta|Beta 已开启|单词本 Beta/u);
-    });
-
-    it('keeps the default-disabled video subtitle card visually neutral', () => {
-        const popup = source('src/app/popup/PopupApp.vue');
-        const styles = source('src/app/popup/popup.css');
-
-        expect(popup).toContain("className: `video-feature-card${config.value.videoTranslationEnabled ? '' : ' needs-enable'}`");
-        expect(popup).toContain(':class="feature.className"');
-        expect(popup).toContain("'YouTube / X' : '已关闭'");
-        expect(styles).not.toMatch(/\.video-feature-card\.needs-enable\s*\{/u);
-        expect(styles).toContain('.video-feature-card.needs-enable small { color: var(--muted); font-weight: 400; }');
-    });
-
-    it('keeps unsupported capability explanations reachable while disabling only their actions', () => {
-        const popup = source('src/app/popup/PopupApp.vue');
-
-        expect(popup).toContain('当前浏览器暂不支持圈选翻译');
-        expect(popup).toContain('当前浏览器暂不支持图片翻译与 OCR');
-        expect(popup).toContain('v-else class="area-translation-block"');
-        expect(popup).toContain('v-if="browserCapabilities.imageTranslation" class="setting-row"');
-        expect(popup).toContain("image: 'settings-image-translation'");
-        expect(popup).not.toContain(':disabled="!config.on || !browserCapabilities.imageTranslation"');
-        expect(popup).not.toContain(':disabled="!browserCapabilities.areaTranslation"');
-    });
-
-    it('keeps video and reading preferences available in full settings after simplifying quick menus', () => {
-        const popup = source('src/app/popup/PopupApp.vue');
-        const settings = source('src/features/settings/ui/SettingsSections.vue');
-        const modelSettings = source('src/features/settings/ui/VideoLocalModelSettings.vue');
-        const appearance = source('src/features/settings/ui/VideoSubtitleAppearanceSettings.vue');
-
-        expect(popup).toContain("video: 'settings-video'");
-        expect(popup).toContain('config.videoSubtitleDisplayMode');
-        expect(popup).not.toContain('v-model="config.videoService"');
-        expect(popup).not.toContain('v-model="config.videoLocalModel"');
-        expect(popup).not.toContain('v-model="config.selectionTtsVoices"');
-        expect(settings).toContain('v-model="config.videoService"');
-        expect(settings).toContain('v-model="config.videoSourceLanguage"');
-        expect(settings).toContain('v-model="config.selectionTtsVoices"');
-        expect(settings).toContain('v-model="config.style"');
-        expect(settings).toContain('v-model="config.theme"');
-        expect(modelSettings).toContain('v-model="config.videoLocalModel"');
-        expect(appearance).toContain('v-model.number="config.videoSubtitleAppearance.fontScale"');
-    });
-
-    it('separates area translation from text selection and image translation', () => {
-        const popup = source('src/app/popup/PopupApp.vue');
-        const settings = source('src/features/settings/ui/SettingsSections.vue');
-        const areaSettings = source('src/features/settings/ui/AreaTranslationSettings.vue');
-        const ocrSettings = source('src/features/image-translation/ui/ImageOcrSettings.vue');
-
-        expect(popupQuickFeatureOptions.map(feature => feature.id)).toContain('area');
-        expect(popup).toContain("area: 'settings-area-translation'");
-        expect(popup).toContain("activeDrawer === 'area'");
-        expect(popup).not.toContain('selectionDrawerTab');
-        const selectionCard = popup.slice(popup.indexOf("  selection: {"), popup.indexOf("  appearance: {"));
-        expect(selectionCard).not.toContain('selectionAreaEnabled');
-        const imageSection = settings.slice(settings.indexOf('id="settings-image-translation"'), settings.indexOf('id="settings-area-translation"'));
-        expect(imageSection).not.toContain('selectionAreaTranslationEnabled');
-        expect(areaSettings).toContain('props.config.areaTranslationService');
-        expect(areaSettings).toContain('props.config.areaTranslationMode');
-        expect(areaSettings).toContain(':placeholder="t(\'area.settings.followService\')"');
-        expect(areaSettings).toContain('servicesType.isUseAIContext');
-        expect(areaSettings).toContain('<ImageOcrSettings id-prefix="area" />');
-        expect(ocrSettings).toContain('`${props.idPrefix}-ocr-pack-title`');
     });
 
     it('routes hover and selection drawers to the merged translation settings section', () => {
@@ -264,7 +192,6 @@ describe('popup feature visibility', () => {
         expect(popup).toContain("quickFullPageProfiles.value.length ? t('popup.quickTranslation.defaultNotSet') : t('common.notSet')");
         expect(popup).toContain("t('popup.quickTranslation.fullPageHint', {count: quickFullPageProfiles.value.length})");
         expect(popup).toContain(':title="fullPageHotkeyTitle"');
-        expect(popup).toContain('findEnabledQuickTranslationHotkeyConflict');
         expect(popup).not.toContain('CustomHotkeyInput');
         expect(styles).toContain('.quick-profile-preview-row');
         expect(styles).toContain('.setting-row small.independent-profile-note');
@@ -283,9 +210,7 @@ describe('popup feature visibility', () => {
 
         expect(popup).toContain('filterAvailableTranslationServices(allServiceOptions.value)');
         expect(popup).toContain('selectedServiceUnavailableMessage');
-        expect(popup).toContain('selectedVideoServiceUnavailableMessage');
         expect(source('src/features/settings/ui/SettingsSections.vue')).toContain('Chrome内置AI翻译（当前浏览器不可用）');
-        expect(popup).toContain('原有开关偏好已保留');
     });
 
     it('supports quick popup search by service name and model keyword', () => {

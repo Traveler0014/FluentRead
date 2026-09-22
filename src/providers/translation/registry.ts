@@ -26,7 +26,6 @@ import deepseek from "./deepseek";
 import azureOpenai from "./azure-openai";
 import chromeTranslator from "./chrome-translator";
 import hunyuanTranslation from "./hunyuan-translation";
-import localTranslation from "./local-translation";
 import googleCloudTranslation from "./google-cloud-translation";
 import azureTranslator from "./azure-translator";
 import aliyunTranslation from "./aliyun-translation";
@@ -64,7 +63,6 @@ const legacyServices: TranslationProviderRegistry = {
     [services.claude]: claude,
     [services.deepseek]: deepseek,
     [services.huanYuanTranslation]: hunyuanTranslation,
-    [services.localTranslation]: localTranslation,
 };
 
 const aiSdkServices: TranslationProviderRegistry = Object.fromEntries(

@@ -352,7 +352,7 @@ export async function translateText(origin: string, context: string = document.t
             serviceOverride: selectedService,
             sourceLanguage: selectedLanguages.sourceLanguage,
             targetLanguage: selectedLanguages.targetLanguage,
-            ...((selectedService === services.chromeTranslator || selectedService === services.localTranslation)
+            ...(selectedService === services.chromeTranslator
               && selectedLanguages.sourceLanguage === 'auto'
               && options.sourceLanguageDetectionText?.trim()
               ? {sourceLanguageDetectionText: options.sourceLanguageDetectionText}

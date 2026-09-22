@@ -13,8 +13,6 @@
   >
     <FreeTranslationSettings v-if="service === services.freeTranslation" :config="config" :advanced="false" />
 
-    <LocalTranslationModelSettings v-if="service === services.localTranslation" :config="config" :service="service" />
-
     <Teleport v-if="connectionActionTarget" :to="connectionActionTarget">
     <section class="service-connection-action">
     <div class="connection-test-inline">
@@ -33,7 +31,7 @@
     </div>
 
     <span
-      v-if="service === services.freeTranslation || service === services.localTranslation"
+      v-if="service === services.freeTranslation"
       class="header-connection-status"
       :class="`is-${connectionTestState}`"
       :title="connectionTestMessage"
@@ -46,7 +44,7 @@
 
     </section>
     </Teleport>
-    <section v-if="service !== services.freeTranslation && service !== services.localTranslation" class="connection-card" data-configuration-group="connection">
+    <section v-if="service !== services.freeTranslation" class="connection-card" data-configuration-group="connection">
       <header class="configuration-group-heading"><h5>连接配置</h5></header>
     <template v-if="service === services.myMemory">
       <div class="connection-field" data-mymemory-email>
@@ -310,7 +308,7 @@
     </div>
     </section>
 
-    <details v-if="service !== services.localTranslation" :key="service + '-advanced-settings'" class="custom-advanced-settings" data-configuration-group="advanced" data-testid="custom-service-advanced">
+    <details :key="service + '-advanced-settings'" class="custom-advanced-settings" data-configuration-group="advanced" data-testid="custom-service-advanced">
       <summary><strong>高级设置</strong><svg class="advanced-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
       <div class="advanced-groups">
     <section :key="service + '-keys'" v-if="compute.showToken && !compute.showServiceSecret" class="advanced-group" data-configuration-group="keys" >
@@ -389,7 +387,7 @@
 
       </div>
     </section>
-    <section :key="service + '-requests'" v-if="service !== services.localTranslation" class="advanced-group" data-configuration-group="requests" >
+    <section :key="service + '-requests'" class="advanced-group" data-configuration-group="requests" >
       <header class="advanced-group-heading"><span class="advanced-summary-copy"><strong>请求设置</strong><small>调整请求频率、等待时间与连接方式</small></span></header>
       <div class="custom-advanced-content">
         <FreeTranslationSettings v-if="service === services.freeTranslation" :config="config" :advanced="true" />
@@ -463,7 +461,6 @@ import PromptTemplateEditor from './PromptTemplateEditor.vue'
 import FreeTranslationSettings from './FreeTranslationSettings.vue'
 import ApiKeyList from './ApiKeyList.vue'
 import { normalizeApiKeyList, eligibleApiKeyIndexes, summarizeApiKeyChecks, type ApiKeyCheckState, type ApiKeySummary } from './apiKeyTypes'
-import LocalTranslationModelSettings from '../LocalTranslationModelSettings.vue'
 import {resolveModelVisionCapability, supportsVisionTransport} from '@/src/core/config/vision'
 import RequestLimitSettings from './RequestLimitSettings.vue'
 

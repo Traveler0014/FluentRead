@@ -7,7 +7,6 @@ import {
     mergeWordCardData,
     normalizeEnglishWord,
     parseDatamuseWord,
-    parseEcdictEntry,
     parseFreeDictionaryEntry,
     parseYoudaoResponse,
     parseWiktApiEntry,
@@ -189,28 +188,6 @@ describe('word dictionary Unicode and untrusted payload boundaries', () => {
 });
 
 describe('word dictionary defensive provider parsing', () => {
-    it('covers empty and mismatched ECDICT rows and fallback translation pairing', () => {
-        expect(parseEcdictEntry({}, 'empty')).toEqual({
-            word: 'empty', normalizedWord: 'empty', phonetics: [], meanings: [],
-            sources: [{id: 'ecdict-local', label: 'ECDICT 本地词库', url: 'https://github.com/skywind3000/ECDICT'}],
-        });
-        const parsed = parseEcdictEntry({
-            w: 'Pair', p: '<i>peə</i>',
-            d: 'n. first definition\nsecond definition\nv. third definition',
-            t: 'v. 第三个定义\nn. 第一个定义', pos: 'n./v.',
-        }, 'pair');
-
-        expect(parsed.word).toBe('Pair');
-        expect(parsed.phonetics).toEqual([{text: '/peə/'}]);
-        expect(parsed.meanings).toEqual([
-            {partOfSpeech: '名词', definitions: [
-                {definition: 'first definition', translatedDefinition: '第一个定义'},
-                {definition: 'second definition'},
-            ]},
-            {partOfSpeech: '动词', definitions: [{definition: 'third definition', translatedDefinition: '第三个定义'}]},
-        ]);
-    });
-
     it('handles alternate Youdao shapes, invalid rows and pronunciation candidates', () => {
         expect(parseYoudaoResponse(null, 'word').meanings).toEqual([]);
         expect(parseYoudaoResponse({ec: {word: 'invalid'}}, 'word').phonetics).toEqual([]);
@@ -267,44 +244,6 @@ describe('word dictionary defensive provider parsing', () => {
 });
 
 describe('word dictionary provider network adapters', () => {
-    it('loads and memoizes the browser-local ECDICT index while filtering malformed rows', async () => {
-        const getURL = vi.fn(() => 'moz-extension://fixture/ecdict-core.json');
-        vi.stubGlobal('browser', {runtime: {getURL}});
-        const fetchMock = vi.fn(async () => response([null, {}, {w: ''}, {w: 'Local', p: 'ləʊkəl', d: 'adj. local', t: 'adj. 本地'}]));
-        vi.stubGlobal('fetch', fetchMock);
-        const local = provider(createDefaultWordDictionaryProviders(), 'ecdict-local');
-
-        expect(await local.lookup('missing')).toBeNull();
-        expect((await local.lookup('local'))?.meanings[0]?.definitions[0]).toEqual({definition: 'local', translatedDefinition: '本地'});
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(getURL).toHaveBeenCalledWith('ecdict-core.json');
-    });
-
-    it('supports chrome runtime, no runtime and throwing runtime access', async () => {
-        vi.stubGlobal('chrome', {runtime: {getURL: () => 'chrome-extension://fixture/ecdict-core.json'}});
-        vi.stubGlobal('fetch', vi.fn(async () => response('not-an-array')));
-        expect(await provider(createDefaultWordDictionaryProviders(), 'ecdict-local').lookup('word')).toBeNull();
-
-        vi.unstubAllGlobals();
-        expect(await provider(createDefaultWordDictionaryProviders(), 'ecdict-local').lookup('word')).toBeNull();
-
-        vi.stubGlobal('browser', {get runtime(): never { throw new Error('runtime unavailable'); }});
-        expect(await provider(createDefaultWordDictionaryProviders(), 'ecdict-local').lookup('word')).toBeNull();
-    });
-
-    it('retries the local index after a transient response failure', async () => {
-        vi.stubGlobal('browser', {runtime: {getURL: () => 'moz-extension://fixture/ecdict-core.json'}});
-        const fetchMock = vi.fn()
-            .mockResolvedValueOnce(response({}, false, 500))
-            .mockResolvedValueOnce(response([{w: 'recover', d: 'v. recover'}]));
-        vi.stubGlobal('fetch', fetchMock);
-        const local = provider(createDefaultWordDictionaryProviders(), 'ecdict-local');
-
-        await expect(local.lookup('recover')).rejects.toThrow('local dictionary request failed: 500');
-        expect((await local.lookup('recover'))?.meanings[0]?.definitions[0]?.definition).toBe('recover');
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-
     it('validates each remote provider payload and merges only matching English entries', async () => {
         const providers = createDefaultWordDictionaryProviders();
         vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -417,20 +356,19 @@ describe('word dictionary lookup orchestration', () => {
         const dictionary = createWordDictionaryLookup({
             warn: warning,
             providers: [
-                {id: 'ecdict-local', lookup: async () => { throw new Error('local failed'); }},
-                {id: 'ecdict-local', lookup: async () => ({
+                {id: 'free-dictionary', lookup: async () => { throw new Error('local failed'); }},
+                {id: 'free-dictionary', lookup: async () => ({
                     word: 'word', normalizedWord: 'word', phonetics: [], meanings: [], sources: [],
                 })},
-                {id: 'ecdict-local', lookup: async () => card('word', 'ecdict-local', {phonetic: ''})},
-                {id: 'youdao-web', lookup: async () => card('word', 'youdao-web', {definition: '中文', phonetic: ''})},
                 {id: 'free-dictionary', lookup: async () => card('word', 'free-dictionary', {phonetic: ''})},
+                {id: 'youdao-web', lookup: async () => card('word', 'youdao-web', {definition: '中文', phonetic: ''})},
                 {id: 'datamuse', lookup: async () => card('word', 'datamuse')},
                 {id: 'wiktapi', lookup: neverReached},
             ],
         });
 
         const result = await dictionary.lookup('word');
-        expect(result?.sources.map((source) => source.id)).toEqual(['ecdict-local', 'youdao-web', 'free-dictionary', 'datamuse']);
+        expect(result?.sources.map((source) => source.id)).toEqual(['free-dictionary', 'youdao-web', 'datamuse']);
         expect(warning).toHaveBeenCalledOnce();
         expect(neverReached).not.toHaveBeenCalled();
     });

@@ -121,7 +121,6 @@ const COMPLEXITY_DEBT_CEILINGS: Record<string, number> = {
     'entrypoints/content.ts': 11,
     'entrypoints/offscreen/main.ts': 3,
     'entrypoints/shadowBridge.content.ts': 9,
-    'entrypoints/youtubeBridge.content.ts': 9,
     'src/app/background/contextMenuRuntime.ts': 137,
     'src/app/background/messageRuntime.ts': 165,
     'src/app/background/runtime.ts': 25,
@@ -130,7 +129,6 @@ const COMPLEXITY_DEBT_CEILINGS: Record<string, number> = {
     'src/app/content/runtime.ts': 269,
     'src/features/settings/ui/SettingsSections.vue': 1558,
     'src/features/full-page-translation/content/runtime.ts': 2164,
-    'src/features/video-subtitle/content/runtime.ts': 1887,
 };
 
 describe('architecture module boundaries', () => {
@@ -159,13 +157,10 @@ describe('architecture module boundaries', () => {
         const files = [
             'entrypoints/background.ts',
             'entrypoints/content.ts',
-            'entrypoints/document/main.ts',
             'entrypoints/offscreen/main.ts',
             'entrypoints/options/main.ts',
             'entrypoints/popup/main.ts',
             'entrypoints/shadowBridge.content.ts',
-            'entrypoints/youtubeBridge.content.ts',
-            'entrypoints/document/index.html',
             'entrypoints/offscreen/index.html',
             'entrypoints/options/index.html',
             'entrypoints/popup/index.html',
@@ -218,12 +213,6 @@ describe('architecture module boundaries', () => {
                 path: 'entrypoints/shadowBridge.content.ts',
                 imports: ['@/src/app/content/shadowBridge'],
                 delegate: 'main: startShadowBridgeApp',
-                metadata: ["runAt: 'document_start'", "world: 'MAIN'"],
-            },
-            {
-                path: 'entrypoints/youtubeBridge.content.ts',
-                imports: ['@/src/app/content/youtubeTimedTextBridge'],
-                delegate: 'main: startYoutubeTimedTextBridgeApp',
                 metadata: ["runAt: 'document_start'", "world: 'MAIN'"],
             },
         ];
@@ -357,20 +346,6 @@ describe('architecture module boundaries', () => {
         }
 
         expect(violations).toEqual([]);
-    });
-
-    it('文档 WXT 页面只通过 app public API 进入垂直功能切片', () => {
-        expect(sourceBody('entrypoints/document/main.ts')).toBe(
-            "import {mountDocumentTranslationApp} from '@/src/app/document-translation/page';\n\nmountDocumentTranslationApp('#app');\n",
-        );
-        const documentUiImports = importSpecifiers(readSource(projectPath('src/app/document-translation/DocumentApp.vue')))
-            .filter((specifier) => specifier.startsWith('@/src/'));
-        const featureEntrypointImports = listSourceFiles('src/features/document-translation')
-            .flatMap((file) => importSpecifiers(readSource(file)))
-            .filter((specifier) => specifier.startsWith('@/entrypoints/'));
-
-        expect(documentUiImports).toEqual(['@/src/app/document-translation']);
-        expect(featureEntrypointImports).toEqual([]);
     });
 
     it('WXT entrypoint 只能进入 app composition root，兼容 utils 目录不得复活', () => {

@@ -12,6 +12,7 @@ on:
   push:
     branches:
       - main
+      - lite
     tags:
       - 'v*'
   # 需要临时出一版时手动触发；tag 留空则只上传 Actions 制品，不建 Release。
@@ -67,6 +68,11 @@ jobs:
         env:
           NODE_OPTIONS: --require ${{ github.workspace }}/.github/scripts/pin-onnxruntime-node.cjs
         run: pnpm build
+
+      # 仅在 lite 分支校验产物不含被裁剪的重型资产；main 分支不维护该清单。
+      - name: Verify Lite bundle
+        if: github.ref_name == 'lite'
+        run: pnpm verify:lite
 
       # 私钥放在仓库 secret 里，保证跨次构建扩展 ID 稳定，crx 能原地覆盖升级。
       # 没有配 secret 时退回一次性密钥，仅用于验证流程可用。
@@ -167,8 +173,13 @@ jobs:
             tag="${INPUT_TAG}"
             title="${tag}"
           else
-            tag="latest"
-            title="FluentRead 自用构建（latest）"
+            if [ "${GITHUB_REF_NAME}" = "lite" ]; then
+              tag="latest-lite"
+              title="FluentRead 自用精简构建（latest-lite）"
+            else
+              tag="latest"
+              title="FluentRead 自用构建（latest）"
+            fi
             rolling=true
           fi
 

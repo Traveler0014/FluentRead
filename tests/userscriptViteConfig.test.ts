@@ -34,9 +34,6 @@ describe('userscript browser shim injection', () => {
             .filter((entry): entry is {find: string; replacement: string} => typeof entry.find === 'string')
             .map((entry) => [entry.find, entry.replacement]));
 
-        for (const feature of ['area-translation', 'image-translation', 'video-subtitle']) {
-            expect(stringAliases.get(`@/src/features/${feature}/public`)).toMatch(/userscript\/unsupportedCapabilities\.ts$/u);
-        }
         expect(stringAliases.get('@/src/platform/storage/credentialContext')).toMatch(/userscript\/credentialContext\.ts$/u);
         expect(stringAliases.get('@/src/platform/storage/configStorageRuntime')).toMatch(/userscript\/storage\.ts$/u);
         expect(userscriptAliases.at(-1)?.find).toBe('@');

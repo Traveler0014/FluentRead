@@ -6,7 +6,6 @@ import {
     mergeWordCardData,
     normalizeEnglishWord,
     parseDatamuseWord,
-    parseEcdictEntry,
     parseFreeDictionaryEntry,
     parseYoudaoResponse,
     parseWiktApiEntry,
@@ -161,26 +160,6 @@ describe('word dictionary provider adapters', () => {
             { text: '/juː/', audio: 'https://dict.youdao.com/dictvoice?audio=you&type=2', label: '美式' },
             { text: '/juː/', audio: 'https://dict.youdao.com/dictvoice?you&phonetic=ju%CB%90&type=1', label: '英式' },
         ]);
-    });
-
-    it('parses a local ECDICT entry without requiring network data', () => {
-        const card = parseEcdictEntry({
-            w: 'you',
-            p: 'ju:',
-            d: 'dat. & obj. The pronoun of the second person.\\n   dative, and objective case.',
-            t: 'pron. 你, 你们',
-            pos: 'pron.',
-        }, 'you');
-
-        expect(card.meanings[0]).toEqual({
-            partOfSpeech: '代词',
-            definitions: [
-                { definition: 'The pronoun of the second person.', translatedDefinition: '你, 你们' },
-                { definition: 'dative, and objective case.' },
-            ],
-        });
-        expect(card.phonetics[0]?.text).toBe('/ju:/');
-        expect(card.sources[0]?.id).toBe('ecdict-local');
     });
 });
 

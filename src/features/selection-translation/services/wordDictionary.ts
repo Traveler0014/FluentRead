@@ -1,8 +1,9 @@
 /**
  * @file src/features/selection-translation/services/wordDictionary.ts
  * 文件职责：实现划词英文词典的多来源聚合、清洗、优先级合并、发音选择、缓存和超时降级，为词卡提供尽可能完整且安全的数据。
- * 主要内容：支持内置 ECDICT、有道、Free Dictionary、WiktAPI、Wiktionary REST 与 Datamuse，包含各响应解析器、HTML/URL 清洗、释义和音标去重、provider 工厂及 LRU 式 lookup。
+ * 主要内容：支持有道、Free Dictionary、WiktAPI、Wiktionary REST 与 Datamuse，包含各响应解析器、HTML/URL 清洗、释义和音标去重、provider 工厂及 LRU 式 lookup。
  * 模块边界：本服务只获取和规范化词典数据，不渲染词卡、不翻译释义或加入词书；后台 wordLookupHandler 编排翻译，SelectionTranslator.vue 展示，HTTP 统一经过 platform/runtimeFetch。
+ * Lite 说明：本分支移除内置 ECDICT（ecdict-core.json）本地词库，只保留在线词典源。
  */
 /**
  * 单词学习卡片的数据适配层。
@@ -17,7 +18,7 @@
 import {readJsonResponse} from '@/src/platform/http/errors';
 import {runtimeFetch} from '@/src/platform/http/runtime';
 
-export type WordDictionaryProviderId = 'ecdict-local' | 'youdao-web' | 'free-dictionary' | 'wiktapi' | 'wiktionary-rest' | 'datamuse';
+export type WordDictionaryProviderId = 'youdao-web' | 'free-dictionary' | 'wiktapi' | 'wiktionary-rest' | 'datamuse';
 
 export interface WordPronunciation {
     text?: string;
@@ -107,14 +108,6 @@ interface YoudaoTranslation {
     tran?: unknown;
 }
 
-interface EcdictEntry {
-    w?: unknown;
-    p?: unknown;
-    d?: unknown;
-    t?: unknown;
-    pos?: unknown;
-}
-
 interface WiktionaryDefinitionEntry {
     partOfSpeech?: unknown;
     language?: unknown;
@@ -129,11 +122,6 @@ const MAX_DEFINITIONS_PER_MEANING = 6;
 const MAX_MEANINGS = 6;
 
 const SOURCE_INFO: Record<WordDictionaryProviderId, WordDictionarySource> = {
-    'ecdict-local': {
-        id: 'ecdict-local',
-        label: 'ECDICT 本地词库',
-        url: 'https://github.com/skywind3000/ECDICT',
-    },
     'youdao-web': {
         id: 'youdao-web',
         label: '有道词典',
@@ -401,10 +389,6 @@ function hasEnglishDefinition(card: WordCardData | WordDefinition): boolean {
     return card.meanings.some(meaning => meaning.definitions.some(definition => hasEnglishDefinition(definition)));
 }
 
-function hasNonLocalBackup(card: WordCardData): boolean {
-    return card.sources.some(source => source.id !== 'ecdict-local');
-}
-
 export function mergeWordCardData(base: WordCardData | null, addition: WordCardData): WordCardData {
     const card = base || createPartialCard(addition.normalizedWord, addition.sources[0] || SOURCE_INFO['free-dictionary']);
     card.word = card.word || addition.word;
@@ -450,84 +434,6 @@ function chooseYoudaoVariant(value: unknown): { text: string; audio?: string } |
         text: selected.text,
         ...(selected.speech ? { audio: `https://dict.youdao.com/dictvoice?${selected.speech}` } : {}),
     };
-}
-
-function localDictionaryUrl(): string | null {
-    try {
-        const extensionGlobal = globalThis as typeof globalThis & {
-            browser?: { runtime?: { getURL?: (path: string) => string } };
-            chrome?: { runtime?: { getURL?: (path: string) => string } };
-        };
-        const runtime = extensionGlobal.browser?.runtime || extensionGlobal.chrome?.runtime;
-        return typeof runtime?.getURL === 'function' ? runtime.getURL('ecdict-core.json') : null;
-    } catch {
-        return null;
-    }
-}
-
-function normalizeEcdictText(value: unknown): string {
-    return stripHtml(textValue(value).replace(/\\n/gu, ' '));
-}
-
-function normalizeEcdictPartOfSpeech(value: unknown): string {
-    const first = textValue(value).split(/[&/]/u)[0]?.trim();
-    return normalizePartOfSpeech(first || '其他');
-}
-
-interface EcdictLine {
-    partOfSpeech: string;
-    text: string;
-}
-
-function parseEcdictLines(value: unknown, fallbackPartOfSpeech = '其他'): EcdictLine[] {
-    let currentPartOfSpeech = fallbackPartOfSpeech;
-    return textValue(value)
-        .split(/\\n|\r?\n/u)
-        .map(normalizeEcdictText)
-        .filter(Boolean)
-        .map(line => {
-            const match = line.match(/^([A-Za-z]{1,8}\.(?:\s*&\s*[A-Za-z]{1,8}\.)*)\s+(.+)$/u);
-            if (!match) return { partOfSpeech: currentPartOfSpeech, text: line };
-            currentPartOfSpeech = normalizeEcdictPartOfSpeech(match[1]);
-            return {
-                partOfSpeech: currentPartOfSpeech,
-                text: match[2].trim(),
-            };
-        });
-}
-
-/** 将一条紧凑的本地 ECDICT 记录解析为统一的学习卡片结构。 */
-export function parseEcdictEntry(entry: EcdictEntry, normalizedWord: string): WordCardData {
-    const source = sourceWithWord(SOURCE_INFO['ecdict-local'], normalizedWord);
-    const card = createPartialCard(normalizedWord, source);
-    const word = textValue(entry.w);
-    const phonetic = normalizeEcdictText(entry.p);
-    if (word) card.word = word;
-    if (phonetic) addPronunciation(card, { text: `/${phonetic}/` });
-
-    const fallbackPartOfSpeech = normalizeEcdictPartOfSpeech(entry.pos);
-    const definitions = parseEcdictLines(entry.d, fallbackPartOfSpeech);
-    const translations = parseEcdictLines(entry.t);
-    const usedTranslations = new Set<number>();
-    for (const [definitionIndex, definition] of definitions.entries()) {
-        const translationIndex = translations.findIndex((translation, index) => (
-            !usedTranslations.has(index) && translation.partOfSpeech === definition.partOfSpeech
-        ));
-        const futurePartOfSpeech = new Set(
-            definitions.slice(definitionIndex + 1).map((item) => item.partOfSpeech),
-        );
-        const fallbackTranslationIndex = translationIndex >= 0
-            ? translationIndex
-            : translations.findIndex((translation, index) => (
-                !usedTranslations.has(index) && !futurePartOfSpeech.has(translation.partOfSpeech)
-            ));
-        if (fallbackTranslationIndex >= 0) usedTranslations.add(fallbackTranslationIndex);
-        addMeaning(card, definition.partOfSpeech, [{
-            definition: definition.text,
-            ...(fallbackTranslationIndex >= 0 ? { translatedDefinition: translations[fallbackTranslationIndex].text } : {}),
-        }]);
-    }
-    return card;
 }
 
 /** 解析中国大陆优先回退链路所用的免密公开词典响应。 */
@@ -700,45 +606,6 @@ export interface WordDictionaryProvider {
     readonly lookup: (word: string) => Promise<WordCardData | null>;
 }
 
-function createEcdictProvider(): WordDictionaryProvider {
-    let indexPromise: Promise<Map<string, EcdictEntry>> | null = null;
-
-    const loadIndex = async (): Promise<Map<string, EcdictEntry>> => {
-        if (indexPromise) return indexPromise;
-        const url = localDictionaryUrl();
-        if (!url) return new Map();
-
-        // 步骤 1：同一后台生命周期只解析一次本地词库；若读取失败则清掉失败 Promise，
-        // 让浏览器资源短暂不可用后的下一次查询能够自动恢复。
-        indexPromise = (async () => {
-            const response = await runtimeFetch(url, {credentials: 'omit'});
-            if (!response.ok) throw new Error(`local dictionary request failed: ${response.status}`);
-            const payload = await readJsonResponse(response, 'local dictionary response is not valid JSON');
-            const entries = Array.isArray(payload) ? payload : [];
-            return new Map(entries.flatMap((entry) => {
-                if (!entry || typeof entry !== 'object') return [];
-                const item = entry as EcdictEntry;
-                const word = textValue(item.w).toLowerCase();
-                return word ? [[word, item] as const] : [];
-            }));
-        })();
-        try {
-            return await indexPromise;
-        } catch (error) {
-            indexPromise = null;
-            throw error;
-        }
-    };
-
-    return {
-        id: 'ecdict-local',
-        async lookup(normalizedWord) {
-            const entry = (await loadIndex()).get(normalizedWord);
-            return entry ? parseEcdictEntry(entry, normalizedWord) : null;
-        },
-    };
-}
-
 async function lookupFreeDictionary(normalizedWord: string): Promise<WordCardData | null> {
     const payload = await fetchJson(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`);
     if (!Array.isArray(payload)) return null;
@@ -793,7 +660,6 @@ async function lookupDatamuse(normalizedWord: string): Promise<WordCardData | nu
 /** 构造默认 provider registry，便于在单测和未来插件中逐个替换网络适配器。 */
 export function createDefaultWordDictionaryProviders(): WordDictionaryProvider[] {
     return [
-        createEcdictProvider(),
         {id: 'youdao-web', lookup: lookupYoudao},
         {id: 'free-dictionary', lookup: lookupFreeDictionary},
         {id: 'datamuse', lookup: lookupDatamuse},
@@ -849,12 +715,11 @@ export function createWordDictionaryLookup(options: WordDictionaryLookupOptions 
             try {
                 const result = await provider.lookup(normalizedWord);
                 if (hasUsefulData(result)) merged = mergeWordCardData(merged, result);
-                // 释义、音标、英文原释义和非本地备份齐全后即可结束；音频仍可走浏览器 TTS。
+                // 释义、音标与英文原释义齐全后即可结束；音频仍可走浏览器 TTS。
                 if (merged
                     && merged.meanings.length > 0
                     && merged.phonetics.length > 0
-                    && hasEnglishDefinition(merged)
-                    && hasNonLocalBackup(merged)) break;
+                    && hasEnglishDefinition(merged)) break;
             } catch (error) {
                 // 单个公共服务失败不向 UI 泄漏内部错误，继续下一个 provider。
                 warn(`[FluentRead] word provider ${provider.id} unavailable`, error);

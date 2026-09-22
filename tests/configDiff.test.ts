@@ -228,11 +228,8 @@ describe('配置差异预览', () => {
                 hover: true,
                 selection: true,
                 appearance: true,
-                image: true,
-                video: true,
-                document: true,
             },
-            popupQuickFeatureOrder: ['hover', 'selection', 'appearance', 'image', 'video', 'document'],
+            popupQuickFeatureOrder: ['hover', 'selection', 'appearance'],
         }, {
             interfaceSkin: 'minimal',
             interfaceVisibility: {
@@ -244,12 +241,9 @@ describe('配置差异预览', () => {
             popupQuickFeatureVisibility: {
                 hover: true,
                 selection: true,
-                appearance: true,
-                image: false,
-                video: true,
-                document: true,
+                appearance: false,
             },
-            popupQuickFeatureOrder: ['document', 'hover', 'selection', 'appearance', 'image', 'video'],
+            popupQuickFeatureOrder: ['appearance', 'hover', 'selection'],
         });
 
         expect(group(result, 'general')?.changes).toEqual(expect.arrayContaining([
@@ -269,14 +263,14 @@ describe('配置差异预览', () => {
             {
                 key: 'popupQuickFeatureVisibility',
                 label: '快捷功能卡片',
-                before: '鼠标悬停翻译：显示、划词翻译：显示、译文显示：显示、图片翻译：显示、圈选翻译：显示、视频翻译：显示、文档翻译：显示',
-                after: '鼠标悬停翻译：显示、划词翻译：显示、译文显示：显示、图片翻译：隐藏、圈选翻译：显示、视频翻译：显示、文档翻译：显示',
+                before: '鼠标悬停翻译：显示、划词翻译：显示、译文显示：显示',
+                after: '鼠标悬停翻译：显示、划词翻译：显示、译文显示：隐藏',
             },
             {
                 key: 'popupQuickFeatureOrder',
                 label: '快捷功能顺序',
-                before: '鼠标悬停翻译 → 划词翻译 → 译文显示 → 图片翻译 → 视频翻译 → 文档翻译',
-                after: '文档翻译 → 鼠标悬停翻译 → 划词翻译 → 译文显示 → 图片翻译 → 视频翻译',
+                before: '鼠标悬停翻译 → 划词翻译 → 译文显示',
+                after: '译文显示 → 鼠标悬停翻译 → 划词翻译',
             },
         ]));
 

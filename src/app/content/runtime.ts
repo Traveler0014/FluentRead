@@ -1,11 +1,10 @@
 /**
  * @file src/app/content/runtime.ts
  * 文件职责：作为内容脚本应用的顶层 composition root，协调配置就绪、站点规则、公共样式、主世界桥、功能注册表、快捷键和消息监听生命周期。
- * 主要内容：安装内联 page.css，构建输入框与页面 feature registry，按 capability 和配置挂载全文周边、悬浮、划词、区域、图片、视频与写作助手等能力；订阅配置变化并处理停用、往返缓存暂停恢复与销毁。
+ * 主要内容：安装内联 page.css，构建输入框与页面 feature registry，按 capability 和配置挂载全文周边、悬浮、划词与输入框等能力；订阅配置变化并处理停用、往返缓存暂停恢复与销毁。
  * 模块边界：本文件只负责依赖装配和页面激活所有权，不实现具体翻译算法、组件内部状态、provider 请求或配置存储；这些职责分别属于 features、services 与 platform。
+ * Lite 说明：本分支移除了写作助手、区域翻译、图片翻译与视频字幕，不再装配对应 feature 与主世界视频桥。
  */
-import {isWritingPage} from '@/src/core/config/writing';
-import {mountWritingAssistant, unmountWritingAssistant, isWritingAssistantMounted} from '@/src/features/writing-assistant/public';
 import type {ContentScriptContext} from 'wxt/utils/content-script-context';
 import {createShadowRootUi} from 'wxt/utils/content-script-ui/shadow-root';
 import {constants} from '@/src/core/config/constants';
@@ -25,15 +24,12 @@ import {
     createInputTranslationContentFeature,
     handleTranslation,
     inputBoxTranslationConfigKey,
-    isAreaTranslatorMounted,
     isFullPageTranslationActive, noteBilingualHostGesture,
-    mountAreaTranslator, mountFloatingBall, isFloatingBallAllowedOnPage,
-    mountHoverTranslationContentFeature, mountImageTranslator, mountParagraphCopyContentFeature,
+    mountFloatingBall, isFloatingBallAllowedOnPage,
+    mountHoverTranslationContentFeature, mountParagraphCopyContentFeature,
     mountSelectionTranslator, mountTranslationProgressPanel,
-    mountVideoSubtitleTranslation,
-    isSupportedVideoPage,
     restoreOriginalContent, resetFullPageTranslationRouteState,
-    unmountAreaTranslator, unmountFloatingBall, unmountImageTranslator,
+    unmountFloatingBall,
     unmountSelectionTranslator,
     unmountTranslationProgressPanel,
 } from './features';
@@ -103,7 +99,7 @@ export async function startContentApp(ctx: ContentScriptContext,
         optionalContentFeatures?.dispose(); optionalContentFeatures = null;
         restoreOriginalContent(); cancelAllTranslations();
         activePageFeatureRegistry?.unmountAll(); activePageFeatureRegistry = null;
-        pageAvailability?.disposeVideoSubtitlePage(); removePageStyles?.();
+        removePageStyles?.();
         removePageStyles = null;
         syncBilingualSentenceHighlight(document, false);
     };
@@ -142,11 +138,6 @@ export async function startContentApp(ctx: ContentScriptContext,
 
         const pageFeatureRegistry = createContentFeatureRegistry([
             {
-                id: 'writing-assistant', mount: () => mountWritingAssistant(ctx),
-                isEnabled: () => capabilities.browser !== 'userscript' && config.on && config.writing.enabled && isWritingPage(window.location.href),
-                unmount: unmountWritingAssistant, isMounted: isWritingAssistantMounted,
-            },
-            {
                 id: 'floating-ball',
                 isEnabled: () => config.on && config.disableFloatingBall !== true && isFloatingBallAllowedOnPage(),
                 mount: () => mountFloatingBall(ctx),
@@ -155,25 +146,10 @@ export async function startContentApp(ctx: ContentScriptContext,
             },
             {
                 id: 'selection-translator',
-                isEnabled: () => config.on && (config.disableSelectionTranslator !== true || config.harness?.enabled === true),
+                isEnabled: () => config.on && config.disableSelectionTranslator !== true,
                 mount: () => mountSelectionTranslator(ctx),
                 unmount: unmountSelectionTranslator,
                 isMounted: () => Boolean(document.getElementById('fluent-read-selection-translator-container')),
-            },
-            {
-                id: 'selection-area-translator',
-                requiredCapability: 'areaTranslation',
-                isEnabled: () => config.on && config.selectionAreaEnabled === true,
-                mount: () => mountAreaTranslator(ctx),
-                unmount: unmountAreaTranslator,
-                isMounted: isAreaTranslatorMounted,
-            },
-            {
-                id: 'image-translator',
-                requiredCapability: 'imageTranslation',
-                isEnabled: () => config.on && config.disableImageTranslator !== true,
-                mount: () => mountImageTranslator(),
-                unmount: unmountImageTranslator,
             },
             {
                 id: 'translation-progress-panel',
@@ -198,13 +174,11 @@ export async function startContentApp(ctx: ContentScriptContext,
     pageAvailability = createContentPageAvailabilityRuntime({
         isEnabled: isPageRuntimeEnabled,
         isPageFeaturesActive: () => featureController !== null,
-        isVideoPage: isSupportedVideoPage,
         shouldAutomaticallyTranslate: () => shouldAutomaticallyTranslatePage(window.location.href, config),
         isFullPageTranslationActive,
         setMainWorldBridgesEnabled: (enabled) => setMainWorldBridgesEnabled(document, enabled),
         activatePageFeatures,
         disposePageFeatures,
-        mountVideoSubtitle: mountVideoSubtitleTranslation,
         autoTranslate: autoTranslateEnglishPage,
     });
     const applySiteDisabledState = async (disabled: boolean): Promise<void> => {
@@ -218,7 +192,6 @@ export async function startContentApp(ctx: ContentScriptContext,
         currentRouteHref = window.location.href;
         siteAdaptation.routeChanged(new URL(window.location.href));
         resetPageTranslationContextCache(); resetFullPageTranslationRouteState();
-        pageAvailability!.syncVideoSubtitlePage();
         void activePageFeatureRegistry?.reconcileEnabled();
     }, {signal: pageEventController.signal});
 
@@ -234,7 +207,7 @@ export async function startContentApp(ctx: ContentScriptContext,
     runtimeMessageListener = createContentRuntimeMessageHandler(ctx, {
         isSiteDisabled: () => currentPageSiteDisabled, updateSiteDisabled: applySiteDisabledState,
         isPageSuspended: pageLifecycle.isSuspended,
-    }, capabilities);
+    });
     browser.runtime.onMessage.addListener(runtimeMessageListener);
     reportSiteDisabledState();
     unsubscribeContentConfig = subscribeConfig((nextConfig) => {

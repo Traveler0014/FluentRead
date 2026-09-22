@@ -1,8 +1,9 @@
 /**
  * @file src/app/content/hotkeyRuntime.ts
  * 文件职责：在宿主页面统一接管 FluentRead 的键盘与鼠标快捷手势，并按配置、站点禁用状态和冲突优先级路由到相应翻译动作。
- * 主要内容：按录制器同一逻辑按键记录组合键，监听 keydown/keyup、pointer 与 touch 状态，匹配悬浮、全文、划词、翻译卡片和区域快捷键，以纯中文选区过滤和保守同语言预检处理选择文本占用与默认行为阻止，并提供 dispose 清理监听器。
+ * 主要内容：按录制器同一逻辑按键记录组合键，监听 keydown/keyup、pointer 与 touch 状态，匹配悬浮、全文、划词与区域快捷键，以纯中文选区过滤和保守同语言预检处理选择文本占用与默认行为阻止，并提供 dispose 清理监听器。
  * 模块边界：这里判定并分派手势，不实现语言检测算法、翻译请求、UI 挂载或配置持久化；具体动作由注入/导入的 feature 公共函数完成。
+ * Lite 说明：本分支移除了翻译卡片与区域翻译，不再处理阅读快捷键。
  */
 import {config} from '@/src/services/config/store';
 import {shouldSkipChineseSelection, shouldSkipTranslationForTarget} from '@/src/core/language/detect';
@@ -42,12 +43,8 @@ export function createContentHotkeyRuntime(isSiteDisabled: () => boolean,
         return ['Control', 'Alt', 'Shift', 'custom'].includes(trigger) ? trigger : 'none';
     };
 
-    const isReadingShortcut = (event: KeyboardEvent): boolean => options.selectionAvailable !== false
-        && !isSiteDisabled() && config.on && config.harness?.enabled && config.harness.trigger === 'shortcut'
-        && matchesConfiguredHotkey(event, 'custom', config.harness.customHotkey);
-
-    const hasActiveSelectionTranslationCandidate = (reading = false): boolean => {
-        if (!reading && !isSelectionTranslatorEnabled()) return false;
+    const hasActiveSelectionTranslationCandidate = (): boolean => {
+        if (!isSelectionTranslatorEnabled()) return false;
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
         const selectionHost = document.getElementById('fluent-read-selection-translator-container');
@@ -56,7 +53,7 @@ export function createContentHotkeyRuntime(isSiteDisabled: () => boolean,
         const range = selection.getRangeAt(0);
         const text = readSelectionText(range, selection.toString());
         if (!text || text.length > 4096 || shouldSkipChineseSelection(text, config.to)
-            || (!reading && shouldSkipTranslationForTarget(text, config.to))) return false;
+            || shouldSkipTranslationForTarget(text, config.to)) return false;
 
         if (shouldIgnoreSelection(range)) return false;
         if (Array.from(range.getClientRects()).some((rect) => rect.width > 0 || rect.height > 0)) return true;
@@ -65,7 +62,6 @@ export function createContentHotkeyRuntime(isSiteDisabled: () => boolean,
     };
 
     const shouldReserveSelectionShortcut = (event: KeyboardEvent): boolean => {
-        if (isReadingShortcut(event)) return hasActiveSelectionTranslationCandidate(true);
         if (!isSelectionTranslatorEnabled()) return false;
         return shouldClaimConfiguredHotkey(
             event,
@@ -81,8 +77,8 @@ export function createContentHotkeyRuntime(isSiteDisabled: () => boolean,
         );
     };
 
-    const matchesSelectionTranslatorShortcut = (event: KeyboardEvent): boolean => isReadingShortcut(event)
-        || (isSelectionTranslatorEnabled() && matchesConfiguredHotkey(event, getConfiguredSelectionHotkey(), config.customSelectionTranslatorHotkey));
+    const matchesSelectionTranslatorShortcut = (event: KeyboardEvent): boolean => isSelectionTranslatorEnabled()
+        && matchesConfiguredHotkey(event, getConfiguredSelectionHotkey(), config.customSelectionTranslatorHotkey);
 
     const toggleFullPageTranslation = options.toggleFullPage ?? (() => {
         // 快捷键必须读取全文会话真值，不能把悬浮球组件的局部状态当成另一份真源。

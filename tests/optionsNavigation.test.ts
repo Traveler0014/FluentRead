@@ -25,16 +25,12 @@ describe('options navigation view-model', () => {
       {
         label: '专项翻译',
         items: [
-          'settings-harness',
-          'settings-image-translation',
-          'settings-area-translation',
-          'settings-video',
           'settings-sites',
         ],
       },
       {
         label: '工具与学习',
-        items: ['settings-writing', 'settings-translation-center', 'settings-vocabulary', 'settings-glossary', 'settings-translation-stats', 'settings-model-usage'],
+        items: ['settings-translation-center', 'settings-glossary', 'settings-translation-stats', 'settings-model-usage'],
       },
       {
         label: '系统与数据',
@@ -46,14 +42,8 @@ describe('options navigation view-model', () => {
       '翻译服务',
       '翻译设置',
       '界面风格',
-      '翻译卡片',
-      '图片翻译',
-      '圈选翻译',
-      '视频字幕翻译',
       '网站规则',
-      '写作助手',
       '翻译中心',
-      '学习中心',
       '术语库',
       '翻译统计',
       '模型用量',
@@ -78,15 +68,7 @@ describe('options navigation view-model', () => {
       .toBe('查看发起的大模型调用、Token 消耗与使用趋势。')
     expect(resolveRequestedSection('#settings-translation-stats')).toBe('settings-translation-stats')
     expect(resolveNavigationItem('settings-translation-stats')).toMatchObject({group: '工具与学习', title: '翻译统计'})
-    expect(resolveRequestedSection('#settings-harness')).toBe('settings-harness')
-    expect(resolveNavigationItem('settings-harness').group).toBe('专项翻译')
-    expect(resolveNavigationItem('settings-vocabulary').title).toBe('学习中心')
-    expect(resolveRequestedSection('#settings-vocabulary')).toBe('settings-vocabulary')
-    expect(resolveRequestedSection('#settings-learning-center')).toBe('settings-vocabulary')
     expect(resolveNavigationItem('missing').id).toBe(DEFAULT_NAVIGATION_SECTION)
-    expect(resolveRequestedSection('#settings-area-translation')).toBe('settings-area-translation')
-    expect(filterNavigationItems('圈选')).toEqual([expect.objectContaining({id: 'settings-area-translation'})])
-    expect(resolveRequestedSection('#settings-video')).toBe('settings-video')
     expect(resolveRequestedSection('settings-sites')).toBe('settings-sites')
     expect(resolveRequestedSection('#settings-webpage')).toBe('settings-translation')
     expect(resolveRequestedSection('#settings-shortcuts')).toBe('settings-translation')
@@ -95,7 +77,6 @@ describe('options navigation view-model', () => {
   })
 
   it('searches all user-facing metadata case-insensitively and trims input', () => {
-    expect(filterNavigationItems('阅读记录')).toEqual([expect.objectContaining({id: 'settings-vocabulary'})])
     expect(filterNavigationItems(' glossary ')).toEqual([expect.objectContaining({id: 'settings-glossary'})])
     expect(filterNavigationItems(' OPENAI ')).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'settings-services' }),
@@ -155,9 +136,6 @@ describe('options navigation view-model', () => {
     }
     expect(filterNavigationItems('')).toEqual([])
     expect(filterNavigationItems('不存在的设置项')).toEqual([])
-    expect(filterNavigationItems('Harness')).toEqual([
-      expect.objectContaining({ id: 'settings-harness' }),
-    ])
   })
 })
 

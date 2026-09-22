@@ -100,6 +100,7 @@ function verificationOwners(path: string, strictCoverage: Set<string>): Verifica
         owners.add('isolated-browser-regression');
     }
     if (path.startsWith('scripts/testing/')
+        || path.startsWith('scripts/lite/')
         || path.startsWith('scripts/wasm/')
         || PRODUCT_TOOL_SCRIPTS.includes(path)
         || path === 'scripts/verify-userscript-build.mjs'

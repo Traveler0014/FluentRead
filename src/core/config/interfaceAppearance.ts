@@ -272,10 +272,6 @@ export const POPUP_QUICK_FEATURE_IDS = [
   'hover',
   'selection',
   'appearance',
-  'image',
-  'area',
-  'video',
-  'document',
 ] as const
 
 export type PopupQuickFeatureId = typeof POPUP_QUICK_FEATURE_IDS[number]
@@ -329,7 +325,7 @@ export const popupModuleOptions: readonly PopupModuleOption[] = [
   {
     id: 'quickFeatures',
     label: '快捷功能栏',
-    description: '显示悬停、划词、图片、视频和文档等快捷入口。',
+    description: '显示悬停、划词和译文显示等快捷入口。',
     labelKey: 'settings.interface.popupLayout.modules.quickFeatures.label',
     descriptionKey: 'settings.interface.popupLayout.modules.quickFeatures.description',
     visibilityKey: 'popupQuickFeatures',
@@ -366,34 +362,6 @@ export const popupQuickFeatureOptions: readonly PopupQuickFeatureOption[] = [
     description: '快速调整译文的显示效果。',
     labelKey: 'settings.interface.popupQuickFeatures.modules.appearance.label',
     descriptionKey: 'settings.interface.popupQuickFeatures.modules.appearance.description',
-  },
-  {
-    id: 'image',
-    label: '图片翻译',
-    description: '识别并翻译图片中的文字。',
-    labelKey: 'settings.interface.popupQuickFeatures.modules.image.label',
-    descriptionKey: 'settings.interface.popupQuickFeatures.modules.image.description',
-  },
-  {
-    id: 'area',
-    label: '圈选翻译',
-    description: '截取页面区域，识别文字后翻译。',
-    labelKey: 'settings.interface.popupQuickFeatures.modules.area.label',
-    descriptionKey: 'settings.interface.popupQuickFeatures.modules.area.description',
-  },
-  {
-    id: 'video',
-    label: '视频翻译',
-    description: '打开视频字幕翻译设置。',
-    labelKey: 'settings.interface.popupQuickFeatures.modules.video.label',
-    descriptionKey: 'settings.interface.popupQuickFeatures.modules.video.description',
-  },
-  {
-    id: 'document',
-    label: '文档翻译',
-    description: '打开文档翻译入口。',
-    labelKey: 'settings.interface.popupQuickFeatures.modules.document.label',
-    descriptionKey: 'settings.interface.popupQuickFeatures.modules.document.description',
   },
 ] as const
 

@@ -61,15 +61,8 @@ export async function runContextMenuAction(
     wasTranslated: boolean,
 ): Promise<ContextMenuActionResult> {
     if (action === 'toggleSite') return toggleSiteExtensionDisabled(info, tab);
-    if (action === 'translateImage') {
-        await sendToFrame(tabId, info, {type: 'contextMenuTranslateImage', srcUrl: info.srcUrl});
-        return {handled: true};
-    }
-    if (action === 'translateSelection' || action === 'translateArea') {
-        await sendToFrame(tabId, info, {
-            type: 'contextMenuTranslate',
-            action: action === 'translateSelection' ? 'selection' : 'area',
-        });
+    if (action === 'translateSelection') {
+        await sendToFrame(tabId, info, {type: 'contextMenuTranslate', action: 'selection'});
         return {handled: true};
     }
     // 整页翻译始终作用于顶层文档，不能落到用户右键所在的子 frame。

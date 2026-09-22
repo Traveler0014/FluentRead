@@ -11,11 +11,6 @@ import {normalizeChineseLanguageCode} from '@/src/core/language/chinese';
 import {DEFAULT_DEEPLX_ENDPOINT} from "./deeplx";
 import {CUSTOM_OPENAI_RESERVED_MODEL_ID, isCustomOpenAIProviderId} from './customOpenAI';
 import {DOUBAO_SEED_TRANSLATION_MODEL_ID, isDoubaoSeedTranslationModel} from './doubaoSeedTranslation';
-import {
-    LOCAL_TRANSLATION_MODELS,
-    DEFAULT_LOCAL_TRANSLATION_MODEL,
-    LOCAL_TRANSLATION_SERVICE_ID,
-} from './localTranslation';
 
 export const services = {
     // 机器翻译
@@ -28,7 +23,6 @@ export const services = {
     xiaoniu: "xiaoniu",
     youdao: "youdao",
     chromeTranslator: "chromeTranslator", // Chrome 内置翻译 API
-    localTranslation: LOCAL_TRANSLATION_SERVICE_ID, // 浏览器内本地模型翻译
     // 云服务厂商机器翻译：使用云控制台签发的密钥调用官方接口，各家都提供免费额度
     tencent: "tencent", // 腾讯云机器翻译 TMT
     googleCloudTranslation: "googleCloudTranslation", // Google Cloud Translation API
@@ -120,7 +114,6 @@ export const servicesType = {
     machine: new Set([
         services.myMemory, services.microsoft, services.freeTranslation, services.deepL, services.deeplx,
         services.google, services.xiaoniu, services.youdao, services.chromeTranslator,
-        services.localTranslation,
         ...cloudVendorServices,
     ]),
     // 云服务厂商：使用云控制台密钥的官方机器翻译接口
@@ -228,7 +221,6 @@ export const servicesType = {
         services.groq,
         services.huanYuan,
         services.huanYuanTranslation,
-        services.localTranslation,
         services.doubao,
         services.siliconCloud,
         services.openrouter,
@@ -434,7 +426,6 @@ export const defaultModelIds = {
     [services.jieyue]: "step-2-mini",
     [services.huanYuan]: currentModelIds.huanYuan,
     [services.huanYuanTranslation]: "hunyuan-translation-lite",
-    [services.localTranslation]: DEFAULT_LOCAL_TRANSLATION_MODEL,
     [services.newapi]: "gpt-5.4-mini",
     [services.grok]: "grok-4.3",
     [services.doubao]: "doubao-seed-1-6-250615",
@@ -472,7 +463,6 @@ export const models = new Map<string, Array<string>>([
     [services.jieyue, [defaultModelIds[services.jieyue], "step-3.5-flash-2603", currentModelIds.jieyue, "step-3", "step-2", customModelString]],
     [services.huanYuan, [currentModelIds.huanYuan, customModelString]],
     [services.huanYuanTranslation, [defaultModelIds[services.huanYuanTranslation], "hunyuan-translation", customModelString]],
-    [services.localTranslation, [...LOCAL_TRANSLATION_MODELS.map((model) => model.value), customModelString]],
     [services.newapi, [defaultModelIds[services.newapi], currentModelIds.openai, "gpt-5.6-sol", "gemini-3.6-flash", "gemini-3.5-flash-lite", currentModelIds.claude, currentModelIds.deepseek, "kimi-k2.7-code", customModelString]],
     [services.grok, [defaultModelIds[services.grok], "grok-4.6", currentModelIds.grok, customModelString]],
     [services.doubao, ["doubao-seed-1-6-250615", DOUBAO_SEED_TRANSLATION_MODEL_ID, customModelString]],
@@ -589,7 +579,6 @@ export const options = {
         {value: services.xiaoniu, label: "小牛翻译"},
         {value: services.youdao, label: "有道翻译"},
         {value: services.chromeTranslator, label: "Chrome内置AI翻译"},
-        {value: services.localTranslation, label: "本地模型翻译", description: "下载后离线翻译，可选轻量语言包与混元翻译模型。"},
         // 云服务厂商：各家云控制台签发密钥，免费额度用完后按量计费
         {value: "cloud", label: "云服务厂商", disabled: true},
         {value: services.tencent, label: "腾讯云翻译", description: "机器翻译 TMT，每月 500 万字符免费额度。"},

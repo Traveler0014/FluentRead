@@ -457,20 +457,8 @@ describe('统一配置存储', () => {
             selectionAreaEnabled: true, disableImageTranslator: true,
             areaTranslationMode: 'standard', areaTranslationService: '',
         });
-        expect(configStore.config.popupQuickFeatureOrder.filter(id => id === 'area')).toHaveLength(1);
-        expect(configStore.config.popupQuickFeatureVisibility.area).toBe(true);
         await configStore.saveConfig({...configStore.config, areaTranslationMode: 'ai', areaTranslationService: 'openai'});
         expect(storageState.get('local:config')).toMatchObject({areaTranslationMode: 'ai', areaTranslationService: 'openai'});
-    });
-
-    it('翻译卡片提示词经过保存与重载保持，占位符和用户空白不被改写', async () => {
-        const store = await loadConfigModule(storedConfig);
-        await store.configReady;
-        const harness = {...store.config.harness, systemPrompt: 'Use {{to}}', actionPrompts: {...store.config.harness.actionPrompts, grammar: '  Custom {{learningLevel}}  '}};
-        await store.saveConfig({...store.config, harness});
-        const reopened = await loadConfigModule(storageState.get('local:config'));
-        await reopened.configReady;
-        expect(reopened.config.harness).toMatchObject({systemPrompt: 'Use {{to}}', actionPrompts: {grammar: '  Custom {{learningLevel}}  '}});
     });
 
     it('保留用户关闭视频、图片和圈选的选择，保存后重新加载仍关闭', async () => {
@@ -508,9 +496,9 @@ describe('统一配置存储', () => {
         const customOpenAIProviders = [{id: 'custom:area', name: 'Area AI', endpoint: 'https://example.com/v1/chat/completions', models: ['vision-or-text-model']}];
         expect(normalizeConfig({areaTranslationService: 'custom:area', customOpenAIProviders}).areaTranslationService).toBe('custom:area');
         expect(normalizeConfig({areaTranslationService: 'custom'}).customOpenAIProviders.some(provider => provider.id === 'custom')).toBe(true);
-        const layout = normalizeConfig({popupQuickFeatureOrder: ['image', 'selection', 'area', 'area', 'unknown'], popupQuickFeatureVisibility: {image: false, area: false}});
-        expect(layout.popupQuickFeatureOrder.filter(id => id === 'area')).toHaveLength(1);
-        expect(layout.popupQuickFeatureVisibility).toMatchObject({image: false, area: false});
+        const layout = normalizeConfig({popupQuickFeatureOrder: ['image', 'selection', 'appearance', 'unknown'], popupQuickFeatureVisibility: {appearance: false}});
+        expect(layout.popupQuickFeatureOrder).toEqual(['selection', 'appearance', 'hover']);
+        expect(layout.popupQuickFeatureVisibility).toMatchObject({appearance: false});
     });
 
     it('为旧配置默认关闭图片、开启视频和圈选，并补齐视频服务和字号', async () => {
@@ -2569,104 +2557,6 @@ describe('统一配置存储', () => {
         batchSender.mockClear();
         await configStore.handoffPendingConfigPatches(sendMessage, batchSender);
         expect(batchSender).not.toHaveBeenCalled();
-    });
-
-    it('设置页真实退出函数同步交接首 ACK 在途的 Harness 最后编辑，重复退出不重写', async () => {
-        const canonical = sanitizeConfigCredentials(normalizeConfig({...storedConfig, harness: {enabled: false, contextMode: 'paragraph'}}));
-        const configStore = await loadConfigModule({...canonical, __fluentConfigRevision: 4});
-        await configStore.configReady;
-        const {createConfigPersistenceHandler, createConfigPersistenceBatchHandler} = await import(
-            '@/src/app/background/handlers/configPersistence'
-        );
-        let backgroundConfig = normalizeConfig(canonical);
-        let revision = 4;
-        let writes = 0;
-        const handler = createConfigPersistenceHandler({
-            ready: Promise.resolve(), getCurrentConfig: () => backgroundConfig, getCurrentRevision: () => revision,
-            prepareConfigSaveRequest: configStore.prepareConfigSaveRequest,
-            prepareConfigPatchRequest: configStore.prepareConfigPatchRequest,
-            isExtensionUrl: () => true,
-            saveConfig: async next => {
-                backgroundConfig = next; writes += 1; revision += 1;
-                storageState.set('local:config', {...sanitizeConfigCredentials(next), __fluentConfigRevision: revision});
-            },
-        });
-        const batchHandler = createConfigPersistenceBatchHandler(handler);
-        let releaseFirstAck!: () => void;
-        const firstAck = new Promise<void>(resolve => { releaseFirstAck = resolve; });
-        const batches: unknown[] = [];
-        const sender = vi.fn(async (message: any) => {
-            if (message.type === 'persistConfigBatch') {
-                batches.push(message);
-                return batchHandler.handle(message, {});
-            }
-            const response = await handler.handle(message, {});
-            if (message.sequence === 1) await firstAck;
-            return response;
-        });
-        const draft = {value: normalizeConfig(configStore.config)};
-        // 执行生产 SFC 中的函数体，而不是复制关闭算法；后台与配置队列仍使用真实实现。
-        const source = readFileSync(resolve(process.cwd(), 'src/features/settings/ui/SettingsSections.vue'), 'utf8');
-        const script = source.match(/<script\b[^>]*>([\s\S]*?)<\/script>/u)![1];
-        const parsed = ts.createSourceFile('SettingsSections.ts', script, ts.ScriptTarget.ES2022, true);
-        const exit = parsed.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === 'persistOnPageExit');
-        expect(exit).toBeDefined();
-        const exitBody = ts.transpileModule(exit!.getText(parsed), {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
-        const autosave = parsed.statements.find(statement => ts.isExpressionStatement(statement)
-            && ts.isCallExpression(statement.expression) && statement.expression.expression.getText(parsed) === 'watch'
-            && statement.expression.arguments[0].getText(parsed).includes('JSON.stringify(config.value)')) as ts.ExpressionStatement;
-        const callback = (autosave.expression as ts.CallExpression).arguments[1].getText(parsed);
-        const autosaveBody = ts.transpileModule(`const onDraftChange = ${callback};`, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
-        const warnings = {warn: vi.fn()};
-        const createExit = (hydrated: boolean) => new Function(
-            'handoffPendingConfigPatches', 'sendConfigMessage', 'persistConfigPatch', 'persistConfigReplace', 'config', 'console', 'normalizeConfig',
-            `let hydrated = ${hydrated}; let pageExitSaveStarted = false; let applyingExternalConfig = false; let lastSerialized = JSON.stringify(config.value); ${exitBody}; ${autosaveBody}; return Object.assign(persistOnPageExit, {onDraftChange});`,
-        )(
-            configStore.handoffPendingConfigPatches, sender,
-            (value: unknown) => configStore.requestConfigPatch(value, sender),
-            (value: unknown) => configStore.requestConfigSave(value, sender), draft, warnings, normalizeConfig,
-        ) as (() => void) & {onDraftChange(serialized: string): void};
-        createExit(false)();
-        expect(sender).not.toHaveBeenCalled();
-
-        draft.value.harness.enabled = true;
-        const first = configStore.requestConfigPatch(draft.value, sender);
-        await vi.waitFor(() => expect(backgroundConfig.harness.enabled).toBe(true));
-        draft.value.harness.contextMode = 'selection';
-        const last = configStore.requestConfigPatch(draft.value, sender);
-        const settled = Promise.allSettled([first, last]);
-        expect(sender).toHaveBeenCalledOnce();
-        const close = createExit(true);
-        try {
-            close();
-            // 关闭函数返回前已经交接，不能依赖尚未释放的页面 ACK 或之后的 microtask。
-            expect(batches).toHaveLength(1);
-            expect(batches[0]).toMatchObject({type: 'persistConfigBatch', patches: [
-                {sequence: 1, config: {harness: {enabled: true, contextMode: 'paragraph'}}},
-                {sequence: 2, config: {harness: {enabled: true, contextMode: 'selection'}}},
-            ]});
-            close();
-            expect(batches).toHaveLength(1);
-            await vi.waitFor(() => expect(backgroundConfig.harness.contextMode).toBe('selection'));
-            expect(writes).toBe(2);
-            expect(warnings.warn).not.toHaveBeenCalled();
-        } finally {
-            releaseFirstAck();
-            await settled;
-        }
-        expect(writes).toBe(2);
-        // 同一页面若并未真正离开，后续新草稿必须允许下一轮退出交接。
-        draft.value.harness.contextMode = 'paragraph';
-        close.onDraftChange(JSON.stringify(draft.value));
-        close();
-        expect(batches).toHaveLength(2);
-        await configStore.waitForConfigPersistenceQueue();
-        expect(backgroundConfig.harness.contextMode).toBe('paragraph');
-        expect(writes).toBe(3);
-        sender.mockClear();
-        createExit(true)();
-        await configStore.waitForConfigPersistenceQueue();
-        expect(sender).not.toHaveBeenCalled();
     });
 
     it('交接只包含同一 sender 的不可变 patch 信封', async () => {

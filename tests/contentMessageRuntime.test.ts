@@ -272,18 +272,14 @@ describe('内容脚本 runtime 消息协议', () => {
         const handler = createContentRuntimeMessageHandler({} as never, {
             isSiteDisabled: () => false,
             updateSiteDisabled: vi.fn(async () => undefined),
-        }, {areaTranslation: true, imageTranslation: true} as never);
+        }, {});
 
         expect(handler({type: 'toggleFloatingBall', isEnabled: true}, {}, respond)).toBe(true);
         expect(handler({type: 'updateSelectionTranslatorMode', mode: 'bilingual'}, {}, respond)).toBe(true);
-        expect(handler({type: 'toggleSelectionAreaTranslator', isEnabled: true}, {}, respond)).toBe(true);
-        expect(handler({type: 'toggleImageTranslator', isEnabled: true}, {}, respond)).toBe(true);
         expect(handler({type: 'toggleTranslationProgressPanel', isEnabled: true}, {}, respond)).toBe(true);
 
         expect(mocks.mountFloatingBall).not.toHaveBeenCalled();
         expect(mocks.mountSelectionTranslator).not.toHaveBeenCalled();
-        expect(mocks.mountAreaTranslator).not.toHaveBeenCalled();
-        expect(mocks.mountImageTranslator).not.toHaveBeenCalled();
         expect(mocks.mountTranslationProgressPanel).not.toHaveBeenCalled();
         expect(handler({type: 'getFullPageTranslationState'}, {}, respond)).toBe(true);
         expect(respond).toHaveBeenLastCalledWith({
@@ -294,24 +290,16 @@ describe('内容脚本 runtime 消息协议', () => {
         expect(mocks.config).toMatchObject({
             disableFloatingBall: false,
             disableSelectionTranslator: false,
-            selectionAreaEnabled: true,
-            disableImageTranslator: false,
             translationProgressPanelEnabled: true,
         });
     });
-    it('关闭划词翻译仍保留 Harness，而总开关关闭会卸载共享界面', async () => {
+    it('划词模式关闭或总开关关闭都会卸载共享界面', async () => {
         const {createContentRuntimeMessageHandler} = await import('@/src/app/content/messageRuntime');
         const handler = createContentRuntimeMessageHandler({} as never, {isSiteDisabled: () => false, updateSiteDisabled: vi.fn()});
         const respond = vi.fn();
-        mocks.config.harness = {enabled: true};
-        handler({type: 'updateSelectionTranslatorMode', mode: 'disabled'}, {}, respond);
-        expect(mocks.mountSelectionTranslator).toHaveBeenCalledOnce();
-        expect(mocks.unmountSelectionTranslator).not.toHaveBeenCalled();
-        mocks.config.on = false;
         handler({type: 'updateSelectionTranslatorMode', mode: 'disabled'}, {}, respond);
         expect(mocks.unmountSelectionTranslator).toHaveBeenCalledOnce();
-        mocks.config.on = true;
-        mocks.config.harness.enabled = false;
+        mocks.config.on = false;
         handler({type: 'updateSelectionTranslatorMode', mode: 'disabled'}, {}, respond);
         expect(mocks.unmountSelectionTranslator).toHaveBeenCalledTimes(2);
     });

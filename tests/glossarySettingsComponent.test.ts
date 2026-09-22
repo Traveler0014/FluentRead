@@ -491,9 +491,9 @@ describe('Glossary integration and user-content boundaries', () => {
     expect(summary.profileSummaryDetail({...profile, glossaryIds: ['技术', 'missing']})).toContain('术语库: 技术新版, missing');
   });
 
-  it('reuses the branded three-state selector across profiles, documents, and subtitle settings', () => {
+  it('reuses the branded three-state selector across profiles and translation settings', () => {
     const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
-    for (const path of ['src/features/settings/ui/QuickTranslationProfiles.vue', 'src/app/document-translation/DocumentApp.vue', 'src/features/settings/ui/SettingsSections.vue']) {
+    for (const path of ['src/features/settings/ui/QuickTranslationProfiles.vue', 'src/features/settings/ui/SettingsSections.vue']) {
       expect(source(path)).toContain('GlossaryLibrarySelect');
     }
     const selector = source('src/ui/components/GlossaryLibrarySelect.vue');

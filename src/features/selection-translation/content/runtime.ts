@@ -1,8 +1,9 @@
 /**
  * @file src/features/selection-translation/content/runtime.ts
  * 文件职责：管理 SelectionTranslator Vue 覆盖层在内容脚本中的单例挂载、异步所有权校验与卸载，避免配置快速切换时旧 Promise 污染新实例。
- * 主要内容：缓存 ContentScriptContext，维护 mountRequestId、实例与 Shadow UI 句柄；划词翻译与 Harness 共用 closed Shadow Root，通过 modal host 控制器承接组件选区，并在两个入口都关闭或请求过期时恢复 DOM 所有权并移除。
+ * 主要内容：缓存 ContentScriptContext，维护 mountRequestId、实例与 Shadow UI 句柄；划词翻译独占 closed Shadow Root，通过 modal host 控制器承接组件选区，并在入口关闭或请求过期时恢复 DOM 所有权并移除。
  * 模块边界：运行时只负责编排组件生命周期，不读取 Selection API、不调用翻译或 TTS；这些行为归 Vue 组件与控制器，Shadow DOM 创建由 platform/shadow-ui 提供。
+ * Lite 说明：本分支移除了阅读卡片，划词挂载不再受 Harness 开关影响。
  */
 import SelectionTranslator from '@/src/features/selection-translation/ui/SelectionTranslator.vue';
 import { config } from '@/src/services/config/store';
@@ -25,7 +26,7 @@ export function mountSelectionTranslator(ctx?: ContentScriptContext) {
   if (ctx) contentScriptContext = ctx;
 
   // 如果已存在实例或配置禁用了此功能，则不创建
-  if (selectionTranslatorInstance || mountingPromise || (!config.harness?.enabled && (config.disableSelectionTranslator || config.selectionTranslatorMode === 'disabled'))) {
+  if (selectionTranslatorInstance || mountingPromise || config.disableSelectionTranslator || config.selectionTranslatorMode === 'disabled') {
     return mountingPromise;
   }
 
@@ -47,7 +48,7 @@ export function mountSelectionTranslator(ctx?: ContentScriptContext) {
     },
   }).then((ui) => {
     // 异步创建结束后复核代次和开关，旧请求不得覆盖较新的挂载状态。
-    if (requestId !== mountRequestId || (!config.harness?.enabled && (config.disableSelectionTranslator || config.selectionTranslatorMode === 'disabled'))) {
+    if (requestId !== mountRequestId || config.disableSelectionTranslator || config.selectionTranslatorMode === 'disabled') {
       ui.remove();
       return null;
     }

@@ -1,7 +1,7 @@
 <!--
  @file src/app/options/OptionsApp.vue
  文件职责：实现扩展 Options 页的顶层布局，组织设置导航、全局搜索结果和学习中心入口，并把选中分区交给对应 feature UI。
- 主要内容：渲染品牌侧栏、版本信息、搜索框与主内容区，复用 settingsNavigation 的项目解析/过滤逻辑，在 SettingsSections 与 LearningCenter 之间切换并重置内容区滚动，同步 URL hash 的深链接与前进后退导航。
+ 主要内容：渲染品牌侧栏、版本信息、搜索框与主内容区，复用 settingsNavigation 的项目解析/过滤逻辑，渲染 SettingsSections 并重置内容区滚动，同步 URL hash 的深链接与前进后退导航。
  模块边界：组件负责页面壳、导航状态和界面皮肤根属性同步，不定义具体配置字段、不直接写 browser.storage，也不实现词汇仓库；设置表单、收藏与阅读记录业务由各 feature 组件拥有。
 -->
 <template>
@@ -52,7 +52,7 @@
       </div>
       <div v-else-if="query" class="search-empty">{{ t('options.searchEmpty', {query}) }}</div>
 
-      <section ref="settingsContentElement" class="settings-card" :class="{ 'services-view': activeSection === 'settings-services', 'translation-center-view': activeSection === 'settings-translation-center', 'vocabulary-view': activeSection === 'settings-vocabulary' }" :aria-label="activeItem.heading">
+      <section ref="settingsContentElement" class="settings-card" :class="{ 'services-view': activeSection === 'settings-services', 'translation-center-view': activeSection === 'settings-translation-center' }" :aria-label="activeItem.heading">
         <KeepAlive>
         <section v-if="activeSection === 'settings-about'" id="settings-about" class="about-page" aria-labelledby="about-title">
           <div class="about-hero">
@@ -116,8 +116,8 @@
         </section>
           <component
             v-else
-            :is="activeSection === 'settings-vocabulary' ? LearningCenter : SettingsSections"
-            :key="activeSection === 'settings-vocabulary' ? 'learning' : 'settings'"
+            :is="SettingsSections"
+            :key="'settings'"
             v-bind="contentComponentProps"
           />
         </KeepAlive>
@@ -135,7 +135,6 @@ import InterfaceBackdrop from '@/src/ui/components/InterfaceBackdrop.vue'
 import {getInterfaceSkinOption} from '@/src/core/config/interfaceAppearance'
 import SettingsNavigationIcon from '@/src/features/settings/ui/SettingsNavigationIcon.vue'
 const SettingsSections = defineAsyncComponent(() => import('@/src/features/settings/ui/SettingsSections.vue'))
-const LearningCenter = defineAsyncComponent(() => import('@/src/features/settings/ui/LearningCenter.vue'))
 import {useUiI18n} from '@/src/ui/i18n'
 import {
   navigationGroups,
@@ -160,9 +159,7 @@ const settingsContentElement = ref<HTMLElement | null>(null)
 const mobileNavigationMedia = window.matchMedia('(max-width: 700px)')
 
 const navigation = navigationItems
-const contentComponentProps = computed(() => activeSection.value === 'settings-vocabulary'
-  ? {onNavigate: selectSection}
-  : {activeSection: activeSection.value})
+const contentComponentProps = computed(() => ({activeSection: activeSection.value}))
 const localizedNavigationGroups = computed(() => navigationGroups.map((group) => ({
   ...group,
   label: translateLegacy(group.label),

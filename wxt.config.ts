@@ -3,29 +3,26 @@ import vue from '@vitejs/plugin-vue';
 import {resolve} from 'path';
 import fs from 'fs';
 import {resolveBrowserCapabilities} from './src/platform/browser/capabilities';
-import {wllamaExtensionWorker} from './scripts/testing/wllama-extension-build';
 import {createUiLanguageBundleFiles} from './src/core/i18n/bundles';
 import {UI_LANGUAGE_BUNDLE_DIRECTORY} from './src/core/i18n/language';
-import {packageWasmDiagnostics} from './scripts/wasm/package-diagnostics';
 
+/**
+ * Lite 分支裁剪开关。清单与理由见 lite/README.md，产物校验见 scripts/lite/verify-lite.mjs。
+ * 这里只做入口过滤；重型资产通过删除 public 目录与不再注入 build:publicAssets 实现。
+ */
+const LITE_EXCLUDED_ENTRYPOINTS = new Set([
+    'localTranslationWorker',
+    'localTtsWorker',
+    'videoTranscriptionWorker',
+    'youtubeBridge',
+    'xVideoBridge',
+    'document',
+]);
 
 const packageJson = JSON.parse(fs.readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 const firefoxRunnerBinary = process.env.FLUENTREAD_FIREFOX_RUNNER_BINARY;
 const firefoxRunnerProfile = process.env.FLUENTREAD_FIREFOX_RUNNER_PROFILE;
 const firefoxRunnerStartUrl = process.env.FLUENTREAD_FIREFOX_RUNNER_START_URL;
-
-function resolvePnpmDependencyDist(ownerPackagePath: string, dependencyName: string): string {
-    const ownerPackage = JSON.parse(fs.readFileSync(resolve(__dirname, ownerPackagePath, 'package.json'), 'utf8')) as {
-        dependencies?: Record<string, string>;
-    };
-    const dependencyVersion = ownerPackage.dependencies?.[dependencyName];
-    if (!dependencyVersion) throw new Error(`无法从 ${ownerPackagePath} 定位 ${dependencyName} 版本`);
-    const pnpmRoot = resolve(__dirname, 'node_modules/.pnpm');
-    const packagePrefix = `${dependencyName}@${dependencyVersion}`;
-    const packageDirectory = fs.readdirSync(pnpmRoot).find((name) => name === packagePrefix || name.startsWith(`${packagePrefix}-`));
-    if (!packageDirectory) throw new Error(`无法定位 ${packagePrefix} 的本地依赖产物`);
-    return resolve(pnpmRoot, packageDirectory, 'node_modules', dependencyName, 'dist');
-}
 
 /**
  * Edge 的扩展内容脚本加载器会拒绝产物中的 Unicode 非字符 U+FFFE/U+FFFF，
@@ -176,7 +173,7 @@ export default defineConfig({
     vite: (env) => {
         const isProductionBuild = env.command === 'build' && env.mode === 'production';
         return {
-            plugins: [vue(), wllamaExtensionWorker(), escapeExtensionNoncharacters()],
+            plugins: [vue(), escapeExtensionNoncharacters()],
             define: {
                 'process.env.VUE_APP_VERSION': JSON.stringify(packageJson.version),
             },
@@ -192,21 +189,16 @@ export default defineConfig({
     },
     hooks: {
         'vite:build:extendConfig': (entrypoints, viteConfig) => extendRemoteConfigBuildConfig(entrypoints, viteConfig as {plugins?: unknown[]}),
+        // Lite 分支只保留网页翻译相关入口；若上游合并把重型 worker/桥接入口带回来，在这里确定性剔除。
+        'entrypoints:found': (_wxt, infos) => {
+            for (let index = infos.length - 1; index >= 0; index -= 1) {
+                if (LITE_EXCLUDED_ENTRYPOINTS.has(infos[index].name)) infos.splice(index, 1);
+            }
+        },
         'build:publicAssets': (_wxt, files) => {
             // 非中文界面文案只生成一份 JSON，由各运行上下文按当前语言加载，不再内联进每个 bundle。
+            // Lite 分支不再打包 wllama / onnxruntime / OCR 等重型资产，它们对应的 feature 已移除。
             files.push(...createUiLanguageBundleFiles());
-            files.push({absoluteSrc: resolve(__dirname, 'node_modules/@wllama/wllama/LICENCE'), relativeDest: 'third-party-notices/wllama-MIT.txt'});
-            files.push({absoluteSrc: resolve(__dirname, 'node_modules/@noble/hashes/LICENSE'), relativeDest: 'third-party-notices/noble-hashes-MIT.txt'});
-            files.push({absoluteSrc: resolve(__dirname, 'node_modules/@wllama/wllama/esm/wasm/wllama.wasm'), relativeDest: 'fluent-read-ai/wllama.wasm'});
-            const opusOrtDist = resolvePnpmDependencyDist('node_modules/@huggingface/transformers', 'onnxruntime-web');
-            files.push({absoluteSrc: packageWasmDiagnostics(__dirname, resolve(opusOrtDist, 'ort-wasm-simd-threaded.jsep.mjs'), 'ort-wasm-simd-threaded.jsep.mjs', 'onnx'), relativeDest: 'fluent-read-ai/ort-wasm-simd-threaded.jsep.mjs'});
-            files.push({absoluteSrc: resolve(opusOrtDist, 'ort-wasm-simd-threaded.jsep.wasm'), relativeDest: 'fluent-read-ai/ort-wasm-simd-threaded.jsep.wasm'});
-            const ttsOrtDist = resolvePnpmDependencyDist('node_modules/@huggingface/transformers-kokoro', 'onnxruntime-web');
-            files.push({absoluteSrc: packageWasmDiagnostics(__dirname, resolve(ttsOrtDist, 'ort-wasm-simd-threaded.asyncify.mjs'), 'tts-ort-wasm-simd-threaded.asyncify.mjs', 'onnx'), relativeDest: 'fluent-read-ai/tts-ort-wasm-simd-threaded.asyncify.mjs'});
-            files.push({absoluteSrc: resolve(ttsOrtDist, 'ort-wasm-simd-threaded.asyncify.wasm'), relativeDest: 'fluent-read-ai/tts-ort-wasm-simd-threaded.asyncify.wasm'});
-            const ocrCore = files.find(file => file.relativeDest === 'fluent-read-ocr/core/tesseract-core-simd-lstm.wasm.js');
-            if (!ocrCore || !('absoluteSrc' in ocrCore)) throw new Error('Missing packaged OCR core');
-            ocrCore.absoluteSrc = packageWasmDiagnostics(__dirname, ocrCore.absoluteSrc, 'tesseract-core-simd-lstm.wasm.js', 'tesseract');
         },
     },
 

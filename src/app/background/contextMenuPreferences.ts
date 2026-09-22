@@ -10,9 +10,7 @@ import {
     type ContextMenuEntryToggles,
 } from '@/src/core/context-menu/domain';
 import {parseHotkey, resolveConfiguredHotkey} from '@/src/core/hotkey';
-import {browserCapabilities} from '@/src/platform/browser/capabilities';
 import {config} from '@/src/services/config/store';
-import {imageMenuEnabled} from './imageContextMenu';
 import {
     getContextMenuTargetLanguage,
     type ContextMenuTitleContext,
@@ -44,8 +42,6 @@ export function readContextMenuSettings(source: ContextMenuConfigSource = config
     const language = normalizeUiLanguage(source.uiLanguage);
     const toggles = resolveContextMenuEntryToggles(source.contextMenuEntries, {
         selectionTranslation: pluginOn && source.selectionTranslatorMode !== 'disabled' && source.disableSelectionTranslator !== true,
-        imageTranslation: imageMenuEnabled(),
-        areaTranslation: pluginOn && browserCapabilities.areaTranslation && source.selectionAreaEnabled === true,
     });
     const display: ContextMenuDisplayOptions = {
         showTargetLanguage: source.contextMenuShowTargetLanguage !== false,

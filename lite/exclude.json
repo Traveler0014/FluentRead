@@ -1,0 +1,51 @@
+{
+  "$comment": "FluentRead Lite 裁剪清单。唯一事实来源：说明见 lite/README.md，产物校验见 scripts/lite/verify-lite.mjs。修改本文件后需同步 wxt.config.ts 与组合根。",
+  "removedFeatures": [
+    "local-translation",
+    "local-tts",
+    "video-subtitle",
+    "image-translation",
+    "area-translation",
+    "document-translation",
+    "vocabulary",
+    "reading-assistant",
+    "writing-assistant"
+  ],
+  "removedServices": [
+    "harness",
+    "writing"
+  ],
+  "removedCore": [
+    "harness"
+  ],
+  "removedEntrypoints": [
+    "localTranslationWorker",
+    "localTtsWorker",
+    "videoTranscriptionWorker",
+    "youtubeBridge",
+    "xVideoBridge",
+    "document"
+  ],
+  "removedOutputAssets": [
+    "fluent-read-ai",
+    "fluent-read-ocr",
+    "pdfjs",
+    "ecdict-core.json",
+    "ecdict-core.LICENSE.md"
+  ],
+  "removedSettingsSections": [
+    "settings-harness",
+    "settings-image-translation",
+    "settings-area-translation",
+    "settings-video",
+    "settings-writing",
+    "settings-vocabulary"
+  ],
+  "keptButNoteworthy": [
+    "translation-stats",
+    "model-usage",
+    "offscreen",
+    "qqMailFrame",
+    "shadowBridge"
+  ]
+}
